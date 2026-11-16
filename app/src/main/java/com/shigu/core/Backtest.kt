@@ -222,10 +222,22 @@ object BacktestEngine {
         }
 
         val stats = stats(panel, config, equity, trades, start, end)
-        val warning = if (config.factors.any { it.key.currentOnly }) {
-            "含估值/市值因子：历史估值缺失时自动降低权重；首次使用请先在数据页准备估值历史，否则可能有前视偏差。"
-        } else {
-            null
+        val snapshotFactors = config.factors.map { it.key }.filter { it.snapshotOnly }
+        val snapshotFilters = config.filters.owners.size < OwnerType.entries.size ||
+            config.filters.stStatuses != setOf(StStatus.NORMAL) ||
+            config.filters.excludeSuspended ||
+            config.filters.minListedDays > 0
+        val warning = when {
+            snapshotFactors.isNotEmpty() -> {
+                "含财务快照因子（${snapshotFactors.joinToString("、") { it.label }}）：历史区间使用当前值，存在前视偏差，回测仅作参考。"
+            }
+            snapshotFilters -> {
+                "含企业性质/ST/停牌/上市天数过滤：历史区间使用当前属性，存在前视偏差；结果只作参考。"
+            }
+            config.factors.any { it.key.currentOnly } -> {
+                "含估值/市值因子：历史估值缺失时自动降低权重；首次使用请先在数据页准备估值历史，否则可能有前视偏差。"
+            }
+            else -> null
         }
         val totalValue = cash + positions.values.sumOf { p ->
             p.shares * (panel.close[p.stockIndex][lastDay].takeIf { !it.isNaN() } ?: p.lastClose)

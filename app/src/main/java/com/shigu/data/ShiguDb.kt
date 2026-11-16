@@ -6,11 +6,13 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.shigu.core.Board
 import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
+import com.shigu.core.OwnerType
+import com.shigu.core.StStatus
 import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 2) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -20,7 +22,21 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 price REAL, change_pct REAL, open REAL, high REAL, low REAL, prev_close REAL,
                 volume REAL, amount REAL, turnover REAL, pe REAL, pb REAL,
                 market_cap REAL, float_cap REAL, volume_ratio REAL, change_60 REAL, change_ytd REAL,
-                is_st INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0
+                is_st INTEGER NOT NULL DEFAULT 0,
+                st_status TEXT NOT NULL DEFAULT 'NORMAL',
+                suspended INTEGER NOT NULL DEFAULT 0,
+                owner_type TEXT NOT NULL DEFAULT 'UNKNOWN',
+                listed_date TEXT NOT NULL DEFAULT '',
+                actual_holder TEXT NOT NULL DEFAULT '',
+                first_holder TEXT NOT NULL DEFAULT '',
+                first_holder_type TEXT NOT NULL DEFAULT '',
+                first_hold_ratio REAL,
+                report_date TEXT NOT NULL DEFAULT '',
+                roe REAL, gross_margin REAL, net_margin REAL,
+                revenue_growth REAL, profit_growth REAL, debt_ratio REAL,
+                eps REAL, bps REAL, ocfps REAL,
+                profile_updated_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
         )
@@ -111,6 +127,46 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_paper_equity_strategy ON paper_equity(strategy_id, date)")
         }
+        // v3：股票基础资料（企业性质/上市日期/财务快照）。旧数据保留，资料列先给默认值。
+        if (oldVersion < 3) {
+            val columns = listOf(
+                "st_status TEXT NOT NULL DEFAULT 'NORMAL'",
+                "suspended INTEGER NOT NULL DEFAULT 0",
+                "owner_type TEXT NOT NULL DEFAULT 'UNKNOWN'",
+                "listed_date TEXT NOT NULL DEFAULT ''",
+                "actual_holder TEXT NOT NULL DEFAULT ''",
+                "first_holder TEXT NOT NULL DEFAULT ''",
+                "first_holder_type TEXT NOT NULL DEFAULT ''",
+                "first_hold_ratio REAL",
+                "report_date TEXT NOT NULL DEFAULT ''",
+                "roe REAL",
+                "gross_margin REAL",
+                "net_margin REAL",
+                "revenue_growth REAL",
+                "profit_growth REAL",
+                "debt_ratio REAL",
+                "eps REAL",
+                "bps REAL",
+                "ocfps REAL",
+                "profile_updated_at INTEGER NOT NULL DEFAULT 0",
+            )
+            columns.forEach { col ->
+                runCatching { db.execSQL("ALTER TABLE stocks ADD COLUMN $col") }
+            }
+            // 旧库没有 st_status：先按现有简称回填，避免升级后 ST 全部显示“正常”。
+            runCatching {
+                db.execSQL(
+                    "UPDATE stocks SET st_status = CASE " +
+                        "WHEN name LIKE '%退%' THEN 'DELISTING' " +
+                        "WHEN name LIKE '%*ST%' THEN 'STAR_ST' " +
+                        "WHEN name LIKE '%ST%' THEN 'ST' " +
+                        "ELSE 'NORMAL' END",
+                )
+            }
+            runCatching {
+                db.execSQL("UPDATE stocks SET suspended = CASE WHEN price <= 0 THEN 1 ELSE 0 END")
+            }
+        }
     }
 
     // ---------------- stocks ----------------
@@ -120,35 +176,107 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         val db = writableDatabase
         db.beginTransaction()
         try {
-            val st = db.compileStatement(
-                "INSERT OR REPLACE INTO stocks(code,name,secid,board,price,change_pct,open,high,low,prev_close,volume,amount,turnover,pe,pb,market_cap,float_cap,volume_ratio,change_60,change_ytd,is_st,updated_at) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            // 行情只覆盖行情列；企业性质/财务等资料列由 updateProfiles 单独写，避免每次同步被清空。
+            val insert = db.compileStatement(
+                "INSERT OR IGNORE INTO stocks(code,name,secid,board,price,change_pct,open,high,low,prev_close,volume,amount,turnover,pe,pb,market_cap,float_cap,volume_ratio,change_60,change_ytd,is_st,st_status,suspended,updated_at) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            )
+            val update = db.compileStatement(
+                "UPDATE stocks SET name=?,secid=?,board=?,price=?,change_pct=?,open=?,high=?,low=?,prev_close=?,volume=?,amount=?,turnover=?,pe=?,pb=?,market_cap=?,float_cap=?,volume_ratio=?,change_60=?,change_ytd=?,is_st=?,st_status=?,suspended=?,updated_at=? WHERE code=?",
             )
             stocks.forEach { s ->
+                insert.clearBindings()
+                insert.bindString(1, s.code)
+                insert.bindString(2, s.name)
+                insert.bindString(3, s.secid)
+                insert.bindString(4, s.board.name)
+                insert.bindDouble(5, s.price)
+                insert.bindDouble(6, s.changePct)
+                insert.bindDouble(7, s.open)
+                insert.bindDouble(8, s.high)
+                insert.bindDouble(9, s.low)
+                insert.bindDouble(10, s.prevClose)
+                insert.bindDouble(11, s.volume)
+                insert.bindDouble(12, s.amount)
+                insert.bindDouble(13, s.turnover)
+                bindNullable(insert, 14, s.pe)
+                bindNullable(insert, 15, s.pb)
+                bindNullable(insert, 16, s.marketCap)
+                bindNullable(insert, 17, s.floatCap)
+                bindNullable(insert, 18, s.volumeRatio)
+                bindNullable(insert, 19, s.change60)
+                bindNullable(insert, 20, s.changeYtd)
+                insert.bindLong(21, if (s.isSt) 1 else 0)
+                insert.bindString(22, s.stStatus.name)
+                insert.bindLong(23, if (s.suspended) 1 else 0)
+                insert.bindLong(24, s.updatedAt)
+                insert.executeInsert()
+
+                update.clearBindings()
+                update.bindString(1, s.name)
+                update.bindString(2, s.secid)
+                update.bindString(3, s.board.name)
+                update.bindDouble(4, s.price)
+                update.bindDouble(5, s.changePct)
+                update.bindDouble(6, s.open)
+                update.bindDouble(7, s.high)
+                update.bindDouble(8, s.low)
+                update.bindDouble(9, s.prevClose)
+                update.bindDouble(10, s.volume)
+                update.bindDouble(11, s.amount)
+                update.bindDouble(12, s.turnover)
+                bindNullable(update, 13, s.pe)
+                bindNullable(update, 14, s.pb)
+                bindNullable(update, 15, s.marketCap)
+                bindNullable(update, 16, s.floatCap)
+                bindNullable(update, 17, s.volumeRatio)
+                bindNullable(update, 18, s.change60)
+                bindNullable(update, 19, s.changeYtd)
+                update.bindLong(20, if (s.isSt) 1 else 0)
+                update.bindString(21, s.stStatus.name)
+                update.bindLong(22, if (s.suspended) 1 else 0)
+                update.bindLong(23, s.updatedAt)
+                update.bindString(24, s.code)
+                update.executeUpdateDelete()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** 只写基础资料列，不动行情。 */
+    fun updateProfiles(profiles: List<StockProfile>, now: Long = System.currentTimeMillis()) {
+        if (profiles.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val st = db.compileStatement(
+                "UPDATE stocks SET owner_type=?,listed_date=?,actual_holder=?,first_holder=?,first_holder_type=?,first_hold_ratio=?," +
+                    "report_date=?,roe=?,gross_margin=?,net_margin=?,revenue_growth=?,profit_growth=?,debt_ratio=?,eps=?,bps=?,ocfps=?," +
+                    "profile_updated_at=? WHERE code=?",
+            )
+            profiles.forEach { p ->
                 st.clearBindings()
-                st.bindString(1, s.code)
-                st.bindString(2, s.name)
-                st.bindString(3, s.secid)
-                st.bindString(4, s.board.name)
-                st.bindDouble(5, s.price)
-                st.bindDouble(6, s.changePct)
-                st.bindDouble(7, s.open)
-                st.bindDouble(8, s.high)
-                st.bindDouble(9, s.low)
-                st.bindDouble(10, s.prevClose)
-                st.bindDouble(11, s.volume)
-                st.bindDouble(12, s.amount)
-                st.bindDouble(13, s.turnover)
-                bindNullable(st, 14, s.pe)
-                bindNullable(st, 15, s.pb)
-                bindNullable(st, 16, s.marketCap)
-                bindNullable(st, 17, s.floatCap)
-                bindNullable(st, 18, s.volumeRatio)
-                bindNullable(st, 19, s.change60)
-                bindNullable(st, 20, s.changeYtd)
-                st.bindLong(21, if (s.isSt) 1 else 0)
-                st.bindLong(22, s.updatedAt)
-                st.executeInsert()
+                st.bindString(1, p.ownerType.name)
+                st.bindString(2, p.listedDate)
+                st.bindString(3, p.actualHolder)
+                st.bindString(4, p.firstHolder)
+                st.bindString(5, p.firstHolderType)
+                bindNullable(st, 6, p.firstHoldRatio)
+                st.bindString(7, p.reportDate)
+                bindNullable(st, 8, p.roe)
+                bindNullable(st, 9, p.grossMargin)
+                bindNullable(st, 10, p.netMargin)
+                bindNullable(st, 11, p.revenueGrowth)
+                bindNullable(st, 12, p.profitGrowth)
+                bindNullable(st, 13, p.debtRatio)
+                bindNullable(st, 14, p.eps)
+                bindNullable(st, 15, p.bps)
+                bindNullable(st, 16, p.ocfps)
+                st.bindLong(17, now)
+                st.bindString(18, p.code)
+                st.executeUpdateDelete()
             }
             db.setTransactionSuccessful()
         } finally {
@@ -197,9 +325,10 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             val i = c.getColumnIndexOrThrow(name)
             return if (c.isNull(i)) null else c.getDouble(i)
         }
+        val name = c.getString(c.getColumnIndexOrThrow("name"))
         return Stock(
             code = c.getString(c.getColumnIndexOrThrow("code")),
-            name = c.getString(c.getColumnIndexOrThrow("name")),
+            name = name,
             secid = c.getString(c.getColumnIndexOrThrow("secid")),
             board = runCatching { Board.valueOf(c.getString(c.getColumnIndexOrThrow("board"))) }.getOrDefault(Board.SZ_MAIN),
             price = d("price"),
@@ -218,8 +347,30 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             volumeRatio = dn("volume_ratio"),
             change60 = dn("change_60"),
             changeYtd = dn("change_ytd"),
-            isSt = c.getInt(c.getColumnIndexOrThrow("is_st")) == 1,
+            stStatus = runCatching {
+                StStatus.valueOf(c.getString(c.getColumnIndexOrThrow("st_status")))
+            }.getOrDefault(StStatus.fromName(name)),
+            suspended = c.getInt(c.getColumnIndexOrThrow("suspended")) == 1,
             updatedAt = c.getLong(c.getColumnIndexOrThrow("updated_at")),
+            ownerType = runCatching {
+                OwnerType.valueOf(c.getString(c.getColumnIndexOrThrow("owner_type")))
+            }.getOrDefault(OwnerType.UNKNOWN),
+            listedDate = c.getString(c.getColumnIndexOrThrow("listed_date")),
+            actualHolder = c.getString(c.getColumnIndexOrThrow("actual_holder")),
+            firstHolder = c.getString(c.getColumnIndexOrThrow("first_holder")),
+            firstHolderType = c.getString(c.getColumnIndexOrThrow("first_holder_type")),
+            firstHoldRatio = dn("first_hold_ratio"),
+            reportDate = c.getString(c.getColumnIndexOrThrow("report_date")),
+            roe = dn("roe"),
+            grossMargin = dn("gross_margin"),
+            netMargin = dn("net_margin"),
+            revenueGrowth = dn("revenue_growth"),
+            profitGrowth = dn("profit_growth"),
+            debtRatio = dn("debt_ratio"),
+            eps = dn("eps"),
+            bps = dn("bps"),
+            ocfps = dn("ocfps"),
+            profileUpdatedAt = c.getLong(c.getColumnIndexOrThrow("profile_updated_at")),
         )
     }
 
@@ -329,6 +480,8 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
     fun countStocks(): Long = scalar("SELECT COUNT(*) FROM stocks")
 
     fun countValuations(): Long = scalar("SELECT COUNT(*) FROM valuation")
+
+    fun countProfiles(): Long = scalar("SELECT COUNT(*) FROM stocks WHERE profile_updated_at > 0")
 
     fun lastTradeDate(): String {
         readableDatabase.rawQuery("SELECT MAX(date) FROM bars WHERE code=?", arrayOf(BENCHMARK)).use { c ->
@@ -611,6 +764,8 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             lastSync = lastSync,
             lastTradeDate = lastTradeDate(),
             dbBytes = bytes,
+            profileCount = countProfiles().toInt(),
+            profileReportDate = getMeta("profile_report_date").orEmpty(),
         )
     }
 

@@ -47,6 +47,7 @@ fun DataScreen(
     onDaily: () -> Unit,
     onFull: () -> Unit,
     onValuation: () -> Unit,
+    onProfile: () -> Unit,
     onAutoUpdate: (Boolean) -> Unit,
     onDailyUniverse: (Universe) -> Unit,
 ) {
@@ -67,6 +68,12 @@ fun DataScreen(
                             "${stats.stockCount} 只资产 · 日线 ${formatCount(stats.barCount)} · 估值 ${formatCount(stats.valuationCount)}",
                             fontSize = 9.sp,
                             color = ShiguPalette.InkSoft,
+                        )
+                        Text(
+                            "基础资料 ${stats.profileCount} 只" +
+                                if (stats.profileReportDate.isBlank()) " · 未同步" else " · 报告期 ${stats.profileReportDate}",
+                            fontSize = 8.5.sp,
+                            color = if (stats.profileCount > 0) ShiguPalette.InkSoft else ShiguPalette.InkFaint,
                         )
                     }
                     Text(
@@ -119,6 +126,8 @@ fun DataScreen(
                 SyncButton("全量下载 · 全部 A 股", "约 5,900 只 × 300 日线，耗时较长", onFull)
                 Spacer(Modifier.height(7.dp))
                 SyncButton("估值历史 · 回测池前800", "PE/PB/市值，价值因子回测用", onValuation)
+                Spacer(Modifier.height(7.dp))
+                SyncButton("基础资料 · 企业性质/ST/财务", "东方财富 F10 批量分页，约 1–2 分钟", onProfile)
             }
         }
 
@@ -164,6 +173,8 @@ fun DataScreen(
                     "趋势：RSRS 右偏/标准分/斜率/R²、LLT、均线、距20日高、回撤。\n" +
                         "量价：球队硬币、隔夜距离、量价背离、换手/成交额稳定、Amihud、量比。\n" +
                         "风险：特质波动、低波、Beta、MAX、偏度、峰度、ATR。\n" +
+                        "基础：企业性质（央企/地方国企/民企/外资/无实控人）、ST/*ST/退市整理、停牌、上市天数、板块、市值。\n" +
+                        "基本面：ROE、毛利率、净利率、营收/净利增速、资产负债率、EPS/BPS、每股经营现金流。\n" +
                         "传统动量/反转和当前 PE/PB/市值也保留在库里，供自定义筛选。",
                     fontSize = 8.5.sp,
                     lineHeight = 13.sp,

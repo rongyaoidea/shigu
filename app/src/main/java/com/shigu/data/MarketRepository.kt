@@ -34,7 +34,7 @@ class MarketRepository(private val db: ShiguDb) {
         val panel = loadPanel(
             universeSize = config.universeSize,
             lookbackDays = config.lookbackDays,
-            includeValuation = config.factors.any { it.key.currentOnly },
+            includeValuation = config.factors.any { it.key.currentOnly && !it.key.snapshotOnly },
             fillCurrent = false,
             maxStocks = 1200,
             boards = config.filters.boards,
@@ -50,7 +50,7 @@ class MarketRepository(private val db: ShiguDb) {
         val panel = loadPanel(
             universeSize = config.universeSize,
             lookbackDays = config.lookbackDays.coerceAtLeast(days + 300),
-            includeValuation = config.factors.any { it.key.currentOnly },
+            includeValuation = config.factors.any { it.key.currentOnly && !it.key.snapshotOnly },
             fillCurrent = false,
             maxStocks = 1200,
             boards = config.filters.boards,

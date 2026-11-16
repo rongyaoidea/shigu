@@ -35,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shigu.core.FactorKey
+import com.shigu.core.OwnerType
+import com.shigu.core.StStatus
 import com.shigu.core.formatPct
 import com.shigu.core.formatYi
 import com.shigu.ui.StockDetailUi
@@ -110,9 +112,13 @@ fun StockScreen(
                         Text(s.code, fontSize = 10.sp, color = ShiguPalette.InkSoft)
                         Spacer(Modifier.width(4.dp))
                         MiniTag(boardText(s.board))
-                        if (s.isSt) {
+                        if (s.stStatus != StStatus.NORMAL) {
                             Spacer(Modifier.width(4.dp))
-                            MiniTag("ST", ShiguPalette.Up)
+                            MiniTag(s.stStatus.label, ShiguPalette.Up)
+                        }
+                        if (s.ownerType != OwnerType.UNKNOWN) {
+                            Spacer(Modifier.width(4.dp))
+                            MiniTag(s.ownerType.label)
                         }
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
@@ -163,6 +169,76 @@ fun StockScreen(
                     MetricCell("换手", "%.2f%%".format(s.turnover), Modifier.weight(1f))
                     MetricCell("成交额", formatYi(s.amount), Modifier.weight(1f))
                     MetricCell("60日涨幅", formatPct(s.change60?.div(100.0)), Modifier.weight(1f))
+                }
+            }
+
+            item {
+                SketchCard(contentPadding = 12.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("基础资料", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            when {
+                                s.profileUpdatedAt <= 0 -> "未同步"
+                                s.reportDate.isNotBlank() -> "财务 ${s.reportDate}"
+                                else -> "已同步"
+                            },
+                            fontSize = 8.sp,
+                            color = ShiguPalette.InkFaint,
+                        )
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    InfoLine("企业性质", s.ownerType.label)
+                    InfoLine("实控人", s.actualHolder.ifBlank { "—" })
+                    InfoLine(
+                        "第一大股东",
+                        if (s.firstHolder.isBlank()) "—" else buildString {
+                            append(s.firstHolder)
+                            if (s.firstHolderType.isNotBlank()) append(" · ${s.firstHolderType}")
+                            s.firstHoldRatio?.let { append(" · ${"%.2f".format(it)}%") }
+                        },
+                    )
+                    InfoLine(
+                        "上市",
+                        if (s.listedDate.isBlank()) "—" else buildString {
+                            append(s.listedDate)
+                            s.listedDaysAt(java.time.LocalDate.now().toString())?.let { append(" · ${it}天") }
+                        },
+                    )
+                    if (s.profileUpdatedAt <= 0) {
+                        Text(
+                            "去“数据”页点“基础资料”同步：企业性质/上市日期/ROE/毛利率/增速/负债率。",
+                            fontSize = 8.sp,
+                            color = ShiguPalette.InkFaint,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    } else {
+                        Spacer(Modifier.height(6.dp))
+                        SketchDivider(seed = "stock-profile")
+                        Row(Modifier.fillMaxWidth()) {
+                            MetricCell("ROE", pctPoint(s.roe), Modifier.weight(1f))
+                            MetricCell("毛利率", pctPoint(s.grossMargin), Modifier.weight(1f))
+                            MetricCell("净利率", pctPoint(s.netMargin), Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            MetricCell("营收增速", pctPoint(s.revenueGrowth), Modifier.weight(1f))
+                            MetricCell("净利增速", pctPoint(s.profitGrowth), Modifier.weight(1f))
+                            MetricCell("负债率", pctPoint(s.debtRatio), Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            MetricCell("EPS", num2(s.eps), Modifier.weight(1f))
+                            MetricCell("BPS", num2(s.bps), Modifier.weight(1f))
+                            MetricCell("每股现金", num2(s.ocfps), Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "企业性质为实控人/第一大股东名称的启发式推断，不是官方标签；财务为最新报告期快照。",
+                            fontSize = 8.sp,
+                            color = ShiguPalette.InkFaint,
+                        )
+                    }
                 }
             }
 
@@ -260,3 +336,17 @@ fun StockScreen(
         )
     }
 }
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 1.5.dp), verticalAlignment = Alignment.Top) {
+        Text(label, fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.width(62.dp))
+        Text(value, fontSize = 9.5.sp, color = ShiguPalette.Ink, modifier = Modifier.weight(1f), maxLines = 2)
+    }
+}
+
+private fun pctPoint(v: Double?): String =
+    if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.1f%%", v)
+
+private fun num2(v: Double?): String =
+    if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.2f", v)

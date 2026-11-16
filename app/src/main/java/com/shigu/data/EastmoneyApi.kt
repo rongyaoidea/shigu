@@ -2,6 +2,7 @@ package com.shigu.data
 
 import com.shigu.core.Board
 import com.shigu.core.DailyBar
+import com.shigu.core.StStatus
 import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.time.LocalDate
+import java.time.YearMonth
 import java.util.concurrent.TimeUnit
 
 class EastmoneyApi(
@@ -27,6 +31,9 @@ class EastmoneyApi(
 ) {
     @Volatile
     private var useUrlConnection = false
+
+    @Volatile
+    private var cachedReportDate: String? = null
 
     companion object {
         private const val UA =
@@ -75,7 +82,8 @@ class EastmoneyApi(
                     volumeRatio = null,
                     change60 = null,
                     changeYtd = null,
-                    isSt = name.contains("ST") || name.contains("退"),
+                    stStatus = StStatus.fromName(name),
+                    suspended = (o.optString("trade").toDoubleOrNull() ?: 0.0) <= 0.0,
                     updatedAt = System.currentTimeMillis(),
                 )
             }
@@ -124,7 +132,8 @@ class EastmoneyApi(
                     volumeRatio = null,
                     change60 = null,
                     changeYtd = null,
-                    isSt = false,
+                    stStatus = StStatus.NORMAL,
+                    suspended = (o.optString("trade").toDoubleOrNull() ?: 0.0) <= 0.0,
                     updatedAt = System.currentTimeMillis(),
                 )
             }
@@ -169,7 +178,8 @@ class EastmoneyApi(
                     volumeRatio = null,
                     change60 = null,
                     changeYtd = null,
-                    isSt = name.contains("ST") || name.contains("退"),
+                    stStatus = StStatus.fromName(name),
+                    suspended = (o.optString("trade").toDoubleOrNull() ?: 0.0) <= 0.0,
                     updatedAt = System.currentTimeMillis(),
                 )
             }
@@ -303,6 +313,170 @@ class EastmoneyApi(
             out.sortBy { it.date }
             out
         }
+
+    /**
+     * 基础资料同步：东方财富 F10 批量接口。
+     * 一次 500 条分页，A 股约 17 页；比逐只请求轻很多。
+     */
+    suspend fun fetchOrgProfiles(
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<OrgProfile> = withContext(Dispatchers.IO) {
+        val out = ArrayList<OrgProfile>(8500)
+        fetchDataPages(
+            reportName = "RPT_F10_BASIC_ORGINFO",
+            columns = "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,LISTING_DATE,ACTUAL_HOLDER",
+            filter = "(SECURITY_TYPE_CODE=\"058001001\")",
+            sortColumns = "SECURITY_CODE",
+            onProgress = onProgress,
+        ) { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val code = o.optString("SECURITY_CODE")
+                if (!code.matches(Regex("\\d{6}"))) continue
+                out += OrgProfile(
+                    code = code,
+                    name = o.optString("SECURITY_NAME_ABBR", ""),
+                    listedDate = o.optString("LISTING_DATE", "").take(10),
+                    actualHolder = o.optString("ACTUAL_HOLDER", "").trim(),
+                )
+            }
+        }
+        out
+    }
+
+    /** 找最近一个已经披露、且覆盖足够多股票的财报期（优先一季报/中报/三季报/年报）。 */
+    suspend fun resolveReportDate(): String = withContext(Dispatchers.IO) {
+        cachedReportDate?.let { return@withContext it }
+        val today = LocalDate.now()
+        val candidates = ArrayList<String>(8)
+        var year = today.year
+        var quarter = 4
+        while (candidates.size < 8) {
+            val month = quarter * 3
+            val date = LocalDate.of(year, month, YearMonth.of(year, month).lengthOfMonth())
+            if (!date.isAfter(today)) candidates += date.toString()
+            quarter--
+            if (quarter == 0) {
+                quarter = 4
+                year--
+            }
+        }
+        for (date in candidates) {
+            val count = reportCount("RPT_F10_FINANCE_MAINFINADATA", "(REPORT_DATE='$date')")
+            if (count >= 1000) {
+                cachedReportDate = date
+                return@withContext date
+            }
+        }
+        (candidates.firstOrNull() ?: "").also { cachedReportDate = it }
+    }
+
+    suspend fun fetchFinanceProfiles(
+        reportDate: String,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<FinanceProfile> = withContext(Dispatchers.IO) {
+        val out = ArrayList<FinanceProfile>(7000)
+        fetchDataPages(
+            reportName = "RPT_F10_FINANCE_MAINFINADATA",
+            columns = "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,REPORT_DATE,ROEJQ,XSMLL,XSJLL,TOTALOPERATEREVETZ,PARENTNETPROFITTZ,ZCFZL,EPSJB,BPS,MGJYXJJE",
+            filter = "(REPORT_DATE='$reportDate')",
+            sortColumns = "SECURITY_CODE",
+            onProgress = onProgress,
+        ) { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val code = o.optString("SECURITY_CODE")
+                if (!code.matches(Regex("\\d{6}"))) continue
+                out += FinanceProfile(
+                    code = code,
+                    reportDate = o.optString("REPORT_DATE", reportDate).take(10),
+                    roe = o.d("ROEJQ"),
+                    grossMargin = o.d("XSMLL"),
+                    netMargin = o.d("XSJLL"),
+                    revenueGrowth = o.d("TOTALOPERATEREVETZ"),
+                    profitGrowth = o.d("PARENTNETPROFITTZ"),
+                    debtRatio = o.d("ZCFZL"),
+                    eps = o.d("EPSJB"),
+                    bps = o.d("BPS"),
+                    ocfps = o.d("MGJYXJJE"),
+                )
+            }
+        }
+        out
+    }
+
+    suspend fun fetchHolderProfiles(
+        reportDate: String,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Map<String, HolderProfile> = withContext(Dispatchers.IO) {
+        val out = HashMap<String, HolderProfile>(7000)
+        fetchDataPages(
+            reportName = "RPT_F10_EH_FREEHOLDERS",
+            columns = "SECUCODE,SECURITY_CODE,END_DATE,HOLDER_NAME,HOLDER_TYPE,HOLD_RATIO,HOLDER_RANK",
+            filter = "(HOLDER_RANK=1)(END_DATE='$reportDate')",
+            sortColumns = "SECURITY_CODE",
+            onProgress = onProgress,
+        ) { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val code = o.optString("SECURITY_CODE")
+                if (!code.matches(Regex("\\d{6}")) || code in out) continue
+                out[code] = HolderProfile(
+                    code = code,
+                    holderName = o.optString("HOLDER_NAME", "").trim(),
+                    holderType = o.optString("HOLDER_TYPE", "").trim(),
+                    holdRatio = o.d("HOLD_RATIO"),
+                )
+            }
+        }
+        out
+    }
+
+    private fun reportCount(reportName: String, filter: String): Long {
+        val url = buildDataUrl(reportName, "SECURITY_CODE", filter, "SECURITY_CODE", 1, 1)
+        val root = JSONObject(get(url, referer = "https://emweb.securities.eastmoney.com/"))
+        return root.optJSONObject("result")?.optLong("count", 0L) ?: 0L
+    }
+
+    private fun fetchDataPages(
+        reportName: String,
+        columns: String,
+        filter: String,
+        sortColumns: String,
+        onProgress: (done: Int, total: Int) -> Unit,
+        onPage: (JSONArray) -> Unit,
+    ) {
+        var page = 1
+        var pages = 1
+        var rows = 0
+        while (page <= pages && page <= 80) {
+            val url = buildDataUrl(reportName, columns, filter, sortColumns, page, 500)
+            val root = JSONObject(get(url, referer = "https://emweb.securities.eastmoney.com/"))
+            val result = root.optJSONObject("result") ?: break
+            pages = result.optInt("pages", 1).coerceAtLeast(1)
+            val arr = result.optJSONArray("data") ?: JSONArray()
+            onPage(arr)
+            rows += arr.length()
+            onProgress(rows, pages * 500)
+            if (arr.length() == 0) break
+            page++
+            Thread.sleep(120L)
+        }
+    }
+
+    private fun buildDataUrl(
+        reportName: String,
+        columns: String,
+        filter: String,
+        sortColumns: String,
+        page: Int,
+        pageSize: Int,
+    ): String {
+        val encodedFilter = URLEncoder.encode(filter, "UTF-8")
+        return "https://datacenter.eastmoney.com/securities/api/data/v1/get" +
+            "?reportName=$reportName&columns=$columns&filter=$encodedFilter" +
+            "&pageNumber=$page&pageSize=$pageSize&sortColumns=$sortColumns&sortTypes=1"
+    }
 
     private fun get(url: String, referer: String = "https://quote.eastmoney.com/"): String {
         if (!useUrlConnection) {

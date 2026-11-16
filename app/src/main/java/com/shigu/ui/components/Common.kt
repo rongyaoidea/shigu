@@ -152,6 +152,12 @@ fun factorText(key: FactorKey, v: Double?): String {
         FactorKey.PE, FactorKey.PB -> format2(v)
         FactorKey.AMIHUD20 -> String.format(Locale.CHINA, "%.2e", v)
         FactorKey.AMOUNT_STABILITY, FactorKey.TURNOVER_STABILITY -> String.format(Locale.CHINA, "%.2f", v)
+        FactorKey.LISTED_DAYS -> String.format(Locale.CHINA, "%.0f天", v)
+        FactorKey.ROE, FactorKey.GROSS_MARGIN, FactorKey.NET_MARGIN, FactorKey.DEBT_RATIO ->
+            String.format(Locale.CHINA, "%.1f%%", v)
+        FactorKey.REVENUE_GROWTH, FactorKey.PROFIT_GROWTH ->
+            String.format(Locale.CHINA, "%+.1f%%", v)
+        FactorKey.EPS, FactorKey.BPS, FactorKey.OCFPS -> format2(v)
         else -> if (key.unit == "%") formatPct(v) else format2(v)
     }
 }

@@ -1,5 +1,7 @@
 package com.shigu.core
 
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 enum class Board(val label: String, val limitPct: Double) {
@@ -10,6 +12,34 @@ enum class Board(val label: String, val limitPct: Double) {
     BSE("北交所", 30.0),
     ETF("ETF", 10.0),
     INDEX("指数", 0.0),
+}
+
+/** 企业性质：按东方财富 F10 的实际控制人 / 第一大股东名称推断，不是官方标签。 */
+enum class OwnerType(val label: String) {
+    CENTRAL_SOE("央企"),
+    LOCAL_SOE("地方国企"),
+    PRIVATE("民企"),
+    FOREIGN("外资"),
+    NO_CONTROLLER("无实控人"),
+    UNKNOWN("未知"),
+}
+
+/** ST 状态：从证券简称解析，当前快照。 */
+enum class StStatus(val label: String) {
+    NORMAL("正常"),
+    ST("ST"),
+    STAR_ST("*ST"),
+    DELISTING("退市整理"),
+    ;
+
+    companion object {
+        fun fromName(name: String): StStatus = when {
+            name.contains("退") -> DELISTING
+            name.contains("*ST") -> STAR_ST
+            name.contains("ST") -> ST
+            else -> NORMAL
+        }
+    }
 }
 
 data class Stock(
@@ -33,11 +63,45 @@ data class Stock(
     val volumeRatio: Double? = null,
     val change60: Double? = null,
     val changeYtd: Double? = null,
-    val isSt: Boolean = false,
+    val stStatus: StStatus = StStatus.NORMAL,
+    val suspended: Boolean = false,
     val updatedAt: Long = 0L,
+    // —— 基础资料（东方财富 F10 批量同步）——
+    val ownerType: OwnerType = OwnerType.UNKNOWN,
+    val listedDate: String = "",
+    val actualHolder: String = "",
+    val firstHolder: String = "",
+    val firstHolderType: String = "",
+    val firstHoldRatio: Double? = null,
+    val reportDate: String = "",
+    val roe: Double? = null,
+    val grossMargin: Double? = null,
+    val netMargin: Double? = null,
+    val revenueGrowth: Double? = null,
+    val profitGrowth: Double? = null,
+    val debtRatio: Double? = null,
+    val eps: Double? = null,
+    val bps: Double? = null,
+    val ocfps: Double? = null,
+    val profileUpdatedAt: Long = 0L,
 ) {
+    val isSt: Boolean get() = stStatus != StStatus.NORMAL
+
     val limitPct: Double
-        get() = if (isSt && board in setOf(Board.SH_MAIN, Board.SZ_MAIN)) 5.0 else board.limitPct
+        get() = if (
+            stStatus in setOf(StStatus.ST, StStatus.STAR_ST) &&
+            board in setOf(Board.SH_MAIN, Board.SZ_MAIN)
+        ) 5.0 else board.limitPct
+
+    /** 上市自然日；用行情日计算，避免回测时用到“今天”的未来信息。 */
+    fun listedDaysAt(date: String): Int? {
+        if (listedDate.length < 10 || date.length < 10) return null
+        return runCatching {
+            val from = LocalDate.parse(listedDate.take(10))
+            val to = LocalDate.parse(date.take(10))
+            ChronoUnit.DAYS.between(from, to).toInt()
+        }.getOrNull()
+    }
 
     val marketLabel: String
         get() = when {
@@ -103,9 +167,24 @@ data class StrategyFilters(
     val minAmount20: Double = 50_000_000.0,
     val maxPe: Double? = null,
     val maxPb: Double? = null,
+    val minMarketCap: Double? = null,
+    val maxMarketCap: Double? = null,
     val excludeSt: Boolean = true,
+    val stStatuses: Set<StStatus> = setOf(StStatus.NORMAL),
+    val owners: Set<OwnerType> = OwnerType.entries.toSet(),
+    val minListedDays: Int = 0,
+    val excludeSuspended: Boolean = false,
     val boards: Set<Board> = setOf(Board.SH_MAIN, Board.SZ_MAIN, Board.CHINEXT, Board.STAR, Board.BSE, Board.ETF),
-)
+) {
+    val isDefault: Boolean
+        get() = this == StrategyFilters()
+
+    val ownerLabel: String
+        get() = if (owners.size >= OwnerType.entries.size) "全部性质" else owners.joinToString("/") { it.label }
+
+    val stLabel: String
+        get() = if (stStatuses.size >= StStatus.entries.size) "全部ST状态" else stStatuses.joinToString("/") { it.label }
+}
 
 data class StrategyConfig(
     val id: String,
@@ -251,7 +330,7 @@ data class ScreenerResult(
     val factorValues: Map<FactorKey, Double> = emptyMap(),
 )
 
-enum class SyncMode { QUICK, DAILY, FULL, VALUATION }
+enum class SyncMode { QUICK, DAILY, FULL, VALUATION, PROFILE }
 
 enum class Universe(val label: String, val limit: Int) {
     QUICK("快速池 · 市值前300", 300),
@@ -283,6 +362,8 @@ data class DataStats(
     val lastSync: Long = 0,
     val lastTradeDate: String = "",
     val dbBytes: Long = 0,
+    val profileCount: Int = 0,
+    val profileReportDate: String = "",
 )
 
 fun format1(v: Double?): String = if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.1f", v)

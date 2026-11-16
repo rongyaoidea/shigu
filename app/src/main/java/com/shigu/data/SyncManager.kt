@@ -243,8 +243,83 @@ class SyncManager(
         }
     }
 
-    private fun selectCodes(all: List<com.shigu.core.Stock>, universe: Universe, mode: SyncMode): List<String> {
-        val list = all.filter { it.board != com.shigu.core.Board.INDEX }
+    /**
+     * 基础资料：企业性质（实控人/第一大股东推断）、上市日期、最新报告期财务快照。
+     * 走东方财富 F10 批量分页，不逐只请求。
+     */
+    suspend fun syncProfiles(): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!mutex.tryLock()) return@withContext Result.failure(IllegalStateException("同步正在进行"))
+        try {
+            val startedAt = System.currentTimeMillis()
+            SyncBus.update {
+                SyncState(
+                    running = true,
+                    mode = SyncMode.PROFILE,
+                    phase = "确定报告期",
+                    message = "企业性质 · 上市日期 · 财务快照",
+                    startedAt = startedAt,
+                )
+            }
+            val reportDate = api.resolveReportDate()
+            if (reportDate.isBlank()) error("无法确定最新报告期")
+
+            SyncBus.update {
+                it.copy(phase = "同步企业资料", message = "报告期 $reportDate · 实控人/上市日期", done = 0, total = 0)
+            }
+            val orgs = api.fetchOrgProfiles { done, total ->
+                SyncBus.update { it.copy(phase = "同步企业资料", done = done, total = total) }
+            }
+
+            SyncBus.update {
+                it.copy(phase = "同步财务快照", message = "报告期 $reportDate · ROE/毛利率/增速/负债率", done = 0, total = 0)
+            }
+            val finances = api.fetchFinanceProfiles(reportDate) { done, total ->
+                SyncBus.update { it.copy(phase = "同步财务快照", done = done, total = total) }
+            }
+
+            SyncBus.update {
+                it.copy(phase = "同步第一大股东", message = "报告期 $reportDate · 用于辅助判断企业性质", done = 0, total = 0)
+            }
+            val holders = api.fetchHolderProfiles(reportDate) { done, total ->
+                SyncBus.update { it.copy(phase = "同步第一大股东", done = done, total = total) }
+            }
+
+            val profiles = com.shigu.data.ProfileAssembler.assemble(
+                orgs = orgs,
+                holders = holders,
+                finances = finances.associateBy { it.code },
+            )
+            db.updateProfiles(profiles)
+            db.putMeta("profile_report_date", reportDate)
+            db.putMeta("profile_sync", System.currentTimeMillis().toString())
+            val covered = db.countProfiles()
+            SyncBus.update {
+                it.copy(
+                    running = false,
+                    phase = "完成",
+                    done = profiles.size,
+                    total = profiles.size,
+                    message = "基础资料 $covered 只 · 报告期 $reportDate · 原始实控人/股东可在个股详情复核",
+                    finishedAt = System.currentTimeMillis(),
+                )
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            SyncBus.update {
+                it.copy(
+                    running = false,
+                    phase = "失败",
+                    message = e.message ?: "基础资料同步失败",
+                    finishedAt = System.currentTimeMillis(),
+                )
+            }
+            Result.failure(e)
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    private fun selectCodes(all: List<com.shigu.core.Stock>, universe: Universe, mode: SyncMode): List<String> {        val list = all.filter { it.board != com.shigu.core.Board.INDEX }
         val limit = if (universe == Universe.ALL) list.size else universe.limit
         val stocks = list.filter { it.board != com.shigu.core.Board.ETF }
             .sortedByDescending { it.marketCap ?: 0.0 }

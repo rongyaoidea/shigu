@@ -477,6 +477,16 @@ object FactorEngine {
             FactorKey.PE -> panel.pe[si][i].takeIf { !it.isNaN() && it > 0 }
             FactorKey.PB -> panel.pb[si][i].takeIf { !it.isNaN() && it > 0 }
             FactorKey.MARKET_CAP -> panel.marketCap[si][i].takeIf { !it.isNaN() && it > 0 }
+            FactorKey.LISTED_DAYS -> panel.stocks[si].listedDaysAt(panel.calendar[i])?.toDouble()
+            FactorKey.ROE -> panel.stocks[si].roe
+            FactorKey.GROSS_MARGIN -> panel.stocks[si].grossMargin
+            FactorKey.NET_MARGIN -> panel.stocks[si].netMargin
+            FactorKey.REVENUE_GROWTH -> panel.stocks[si].revenueGrowth
+            FactorKey.PROFIT_GROWTH -> panel.stocks[si].profitGrowth
+            FactorKey.DEBT_RATIO -> panel.stocks[si].debtRatio
+            FactorKey.EPS -> panel.stocks[si].eps
+            FactorKey.BPS -> panel.stocks[si].bps
+            FactorKey.OCFPS -> panel.stocks[si].ocfps
             FactorKey.TEAM_COIN, FactorKey.OVERNIGHT_DIST -> null
         }
     }
@@ -519,17 +529,33 @@ object FactorEngine {
         for (si in 0 until count) {
             val stock = panel.stocks[si]
             val price = panel.close[si][i]
-            if (price.isNaN() || price < config.filters.minPrice) continue
-            if (config.filters.excludeSt && stock.isSt) continue
-            if (stock.board !in config.filters.boards) continue
+            val filters = config.filters
+            if (price.isNaN() || price < filters.minPrice) continue
+            if (filters.excludeSt && stock.stStatus != StStatus.NORMAL) continue
+            if (filters.stStatuses.isNotEmpty() && stock.stStatus !in filters.stStatuses) continue
+            if (filters.owners.isNotEmpty() && stock.ownerType !in filters.owners) continue
+            if (filters.excludeSuspended && stock.suspended) continue
+            if (filters.minListedDays > 0) {
+                val days = stock.listedDaysAt(panel.calendar[i]) ?: continue
+                if (days < filters.minListedDays) continue
+            }
+            if (stock.board !in filters.boards) continue
 
             val amount20 = value(panel, si, i, FactorKey.AMOUNT20)
-            if (amount20 == null || amount20 < config.filters.minAmount20) continue
+            if (amount20 == null || amount20 < filters.minAmount20) continue
 
             val peV = value(panel, si, i, FactorKey.PE)
             val pbV = value(panel, si, i, FactorKey.PB)
-            if (config.filters.maxPe != null && (peV == null || peV <= 0 || peV > config.filters.maxPe!!)) continue
-            if (config.filters.maxPb != null && (pbV == null || pbV <= 0 || pbV > config.filters.maxPb!!)) continue
+            if (filters.maxPe != null && (peV == null || peV <= 0 || peV > filters.maxPe)) continue
+            if (filters.maxPb != null && (pbV == null || pbV <= 0 || pbV > filters.maxPb)) continue
+
+            if (filters.minMarketCap != null || filters.maxMarketCap != null) {
+                val cap = panel.marketCap[si][i].takeIf { !it.isNaN() && it > 0 }
+                    ?: stock.marketCap?.takeIf { i == panel.lastIndex && it > 0 }
+                    ?: continue
+                if (filters.minMarketCap != null && cap < filters.minMarketCap) continue
+                if (filters.maxMarketCap != null && cap > filters.maxMarketCap) continue
+            }
 
             var score = 0.0
             var usedWeight = 0.0

@@ -111,6 +111,7 @@ fun ShiguAppUi() {
                         onPool = vm::setScreenPool,
                         onAssetFilter = vm::setAssetFilter,
                         onApplyFactors = vm::applyFactors,
+                        onApplyFilters = vm::applyFilters,
                         onSaveStrategy = vm::saveCustom,
                         onRun = vm::runScreen,
                         onQuickSync = vm::quickSync,
@@ -148,6 +149,7 @@ fun ShiguAppUi() {
                         onDaily = vm::dailySync,
                         onFull = vm::fullSync,
                         onValuation = vm::valuationSync,
+                        onProfile = vm::profileSync,
                         onAutoUpdate = vm::setAutoUpdate,
                         onDailyUniverse = vm::setDailyUniverse,
                     )

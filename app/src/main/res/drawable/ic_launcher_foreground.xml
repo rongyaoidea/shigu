@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  拾股图标：手绘线条风 A 股票据。
+  纸张底 + 微微倾斜的票据边框 + 大 A + 上升折线 + 红色印章。
+  前景内容控制在自适应图标安全区（中心 66×66）内。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="56"
+        android:rotation="-6">
+
+        <!-- 票据外框：手绘感的不完全笔直边框 -->
+        <path
+            android:pathData="M33.4,36.2 L74.8,35.6 Q79.2,35.4 79.3,39.8 L79.6,72.1 Q79.7,76.3 75.3,76.4 L33.1,76.7 Q28.8,76.8 28.7,72.4 L28.5,40.1 Q28.4,36.0 33.4,36.2 Z"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- 内框：细线，略淡 -->
+        <path
+            android:pathData="M34.6,40.2 L74.2,39.7 Q75.9,39.6 76.0,41.4 L76.2,70.7 Q76.3,72.5 74.5,72.6 L34.2,72.9 Q32.4,73.0 32.3,71.1 L32.1,42.0 Q32.0,40.3 34.6,40.2 Z"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="0.9"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- 票据左侧打孔 -->
+        <path
+            android:pathData="M33.2,46.0 m-0.95,0 a0.95,0.95 0,1 0,1.9 0 a0.95,0.95 0,1 0,-1.9 0"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="0.8" />
+        <path
+            android:pathData="M33.0,56.0 m-0.95,0 a0.95,0.95 0,1 0,1.9 0 a0.95,0.95 0,1 0,-1.9 0"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="0.8" />
+        <path
+            android:pathData="M32.8,66.0 m-0.95,0 a0.95,0.95 0,1 0,1.9 0 a0.95,0.95 0,1 0,-1.9 0"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="0.8" />
+
+        <!-- 票据抬头短线 -->
+        <path
+            android:pathData="M37.8,44.1 Q42.8,43.9 47.6,44.2"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="1.2"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M37.7,47.2 Q41.2,47.0 44.7,47.3"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="1.0"
+            android:strokeLineCap="round" />
+
+        <!-- 大 A：三笔手写 -->
+        <path
+            android:pathData="M41.2,65.6 Q43.6,57.0 47.3,48.2"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="3.4"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M47.3,48.2 Q50.4,56.8 53.9,65.4"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="3.4"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M43.8,59.3 Q47.5,59.1 51.6,59.2"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="3.0"
+            android:strokeLineCap="round" />
+
+        <!-- 上升折线 + 箭头 -->
+        <path
+            android:pathData="M56.8,66.2 L61.5,59.7 L65.2,62.7 L72.7,50.1"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="2.1"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M72.7,50.1 L67.3,50.8"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="2.0"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M72.7,50.1 L71.5,44.8"
+            android:strokeColor="#2B2620"
+            android:strokeWidth="2.0"
+            android:strokeLineCap="round" />
+
+        <!-- 折线节点 -->
+        <path
+            android:pathData="M61.5,59.7 m-1.15,0 a1.15,1.15 0,1 0,2.3 0 a1.15,1.15 0,1 0,-2.3 0"
+            android:fillColor="#C24034" />
+        <path
+            android:pathData="M65.2,62.7 m-1.05,0 a1.05,1.05 0,1 0,2.1 0 a1.05,1.05 0,1 0,-2.1 0"
+            android:fillColor="#C24034" />
+
+        <!-- 票据底部说明线 -->
+        <path
+            android:pathData="M37.7,69.9 Q42.6,69.7 47.2,70.0"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="1.0"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M37.6,73.0 Q40.9,72.8 44.2,73.1"
+            android:strokeColor="#6B6257"
+            android:strokeWidth="0.9"
+            android:strokeLineCap="round" />
+
+        <!-- 红色印章：双圈 + 五角星 -->
+        <path
+            android:pathData="M70.4,67.8 m-9.2,0 a9.2,9.2 0,1 0,18.4 0 a9.2,9.2 0,1 0,-18.4 0"
+            android:strokeColor="#C24034"
+            android:strokeWidth="1.9"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M70.3,67.7 m-7.2,0 a7.2,7.2 0,1 0,14.4 0 a7.2,7.2 0,1 0,-14.4 0"
+            android:strokeColor="#C24034"
+            android:strokeWidth="0.8" />
+        <path
+            android:pathData="M70.4,63.5 L71.7,66.9 L75.3,67.0 L72.5,69.2 L73.5,72.7 L70.4,70.7 L67.3,72.7 L68.3,69.2 L65.5,67.0 L69.1,66.9 Z"
+            android:fillColor="#C24034" />
+    </group>
+</vector>

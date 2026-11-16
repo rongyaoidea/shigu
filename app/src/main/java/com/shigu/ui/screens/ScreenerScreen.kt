@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
@@ -44,16 +45,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.shigu.core.Board
 import com.shigu.core.FactorKey
 import com.shigu.core.FactorWeight
+import com.shigu.core.OwnerType
 import com.shigu.core.Pick
+import com.shigu.core.StStatus
 import com.shigu.core.StrategyConfig
+import com.shigu.core.StrategyFilters
 import com.shigu.core.StrategyPresets
 import com.shigu.core.SyncState
 import com.shigu.ui.UiState
@@ -81,14 +87,17 @@ fun ScreenerScreen(
     onPool: (Int) -> Unit,
     onAssetFilter: (String) -> Unit,
     onApplyFactors: (List<FactorWeight>, Int) -> Unit,
+    onApplyFilters: (StrategyFilters) -> Unit,
     onSaveStrategy: (StrategyConfig, String) -> Unit,
     onRun: () -> Unit,
     onQuickSync: () -> Unit,
 ) {
     var showFactor by remember { mutableStateOf(false) }
+    var showBasic by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     var strategyName by remember { mutableStateOf("") }
     val boards = state.screenConfig.filters.boards
+    val currentFilters = state.screenConfig.filters
     val assetKind = when {
         boards == setOf(com.shigu.core.Board.ETF) -> "etf"
         com.shigu.core.Board.ETF in boards -> "all"
@@ -127,17 +136,16 @@ fun ScreenerScreen(
                     PaperPill("$n", state.screenPool == n, { onPool(n) })
                 }
                 Spacer(Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .clickable { showFactor = true }
-                        .background(ShiguPalette.Ink, RoundedCornerShape(7.dp))
-                        .padding(horizontal = 9.dp, vertical = 6.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Icon(Icons.Filled.Tune, null, tint = ShiguPalette.Paper, modifier = Modifier.size(12.dp))
-                        Text("因子", fontSize = 10.sp, color = ShiguPalette.Paper)
-                    }
-                }
+                SmallFilterButton(
+                    label = "基础",
+                    active = !currentFilters.isDefault,
+                    filled = false,
+                ) { showBasic = true }
+                SmallFilterButton(
+                    label = "因子",
+                    active = true,
+                    filled = true,
+                ) { showFactor = true }
             }
         }
 
@@ -167,9 +175,22 @@ fun ScreenerScreen(
             }
         }
 
+        val filterText = filterSummary(currentFilters)
+        if (filterText.isNotBlank()) {
+            item {
+                Text(
+                    "基础过滤：$filterText",
+                    fontSize = 8.5.sp,
+                    color = ShiguPalette.InkSoft,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
         item {
             Text(
-                "因子只负责排序/筛选；存为策略后才会进入回测和创建后模拟。",
+                "因子只负责排序/筛选；企业性质、ST、停牌与财务为当前快照。存为策略后才会进入回测和创建后模拟。",
                 fontSize = 8.5.sp,
                 color = ShiguPalette.InkFaint,
             )
@@ -246,6 +267,17 @@ fun ScreenerScreen(
             onApply = { factors, topN ->
                 showFactor = false
                 onApplyFactors(factors, topN)
+            },
+        )
+    }
+
+    if (showBasic) {
+        BasicFilterDialog(
+            initial = currentFilters,
+            onDismiss = { showBasic = false },
+            onApply = { filters ->
+                showBasic = false
+                onApplyFilters(filters)
             },
         )
     }
@@ -534,7 +566,11 @@ private fun FactorRow(
                     Text(key.label, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        if (key.category == "估值") "当前" else "日频",
+                        when {
+                            key.snapshotOnly -> "快照"
+                            key.currentOnly -> "当前"
+                            else -> "日频"
+                        },
                         fontSize = 8.sp,
                         color = ShiguPalette.InkFaint,
                     )
@@ -587,6 +623,359 @@ private fun FactorRow(
         }
     }
 }
+
+@Composable
+private fun SmallFilterButton(
+    label: String,
+    active: Boolean,
+    filled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .background(
+                when {
+                    filled -> ShiguPalette.Ink
+                    active -> ShiguPalette.Highlighter
+                    else -> Color.Transparent
+                },
+                RoundedCornerShape(7.dp),
+            )
+            .border(1.dp, if (filled) ShiguPalette.Ink else ShiguPalette.InkFaint, RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (label == "因子") {
+                Icon(
+                    Icons.Filled.Tune,
+                    null,
+                    tint = if (filled) ShiguPalette.Paper else ShiguPalette.InkSoft,
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+            Text(
+                label,
+                fontSize = 10.sp,
+                color = if (filled) ShiguPalette.Paper else ShiguPalette.Ink,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BasicFilterDialog(
+    initial: StrategyFilters,
+    onDismiss: () -> Unit,
+    onApply: (StrategyFilters) -> Unit,
+) {
+    var owners by remember { mutableStateOf(initial.owners) }
+    var stStatuses by remember { mutableStateOf(initial.stStatuses) }
+    var minDays by remember { mutableStateOf(initial.minListedDays) }
+    var excludeSuspended by remember { mutableStateOf(initial.excludeSuspended) }
+    var boards by remember { mutableStateOf(initial.boards) }
+    var minPrice by remember { mutableStateOf(trimNum(initial.minPrice)) }
+    var minAmount by remember { mutableStateOf(trimNum(initial.minAmount20 / 1e8)) }
+    var maxPe by remember { mutableStateOf(initial.maxPe?.let { trimNum(it) } ?: "") }
+    var maxPb by remember { mutableStateOf(initial.maxPb?.let { trimNum(it) } ?: "") }
+    var minCap by remember { mutableStateOf(initial.minMarketCap?.let { trimNum(it / 1e8) } ?: "") }
+    var maxCap by remember { mutableStateOf(initial.maxMarketCap?.let { trimNum(it / 1e8) } ?: "") }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(vertical = 16.dp),
+            color = ShiguPalette.Paper,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("基础过滤", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    Text("属性快照", fontSize = 9.sp, color = ShiguPalette.InkSoft)
+                }
+                Text(
+                    "企业性质按实控人/第一大股东推断；ST、停牌与财务为当前快照。历史回测使用当前属性，存在前视偏差。",
+                    fontSize = 8.5.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+                )
+                SketchDivider(seed = "basic-filter")
+
+                LazyColumn(
+                    Modifier
+                        .heightIn(max = 430.dp)
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        FilterHeader(
+                            title = "企业性质",
+                            hint = "可多选；至少选 1 个",
+                            action = if (owners.size == OwnerType.entries.size) "清空" else "全选",
+                            onAction = {
+                                owners = if (owners.size == OwnerType.entries.size) {
+                                    emptySet()
+                                } else {
+                                    OwnerType.entries.toSet()
+                                }
+                            },
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            items(OwnerType.entries) { owner ->
+                                PaperPill(
+                                    text = owner.label,
+                                    selected = owner in owners,
+                                    onClick = {
+                                        owners = if (owner in owners) owners - owner else owners + owner
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        FilterHeader(
+                            title = "ST 状态",
+                            hint = "默认只看正常；*ST/退市整理风险更高",
+                            action = if (stStatuses.size == StStatus.entries.size) "清空" else "全选",
+                            onAction = {
+                                stStatuses = if (stStatuses.size == StStatus.entries.size) {
+                                    emptySet()
+                                } else {
+                                    StStatus.entries.toSet()
+                                }
+                            },
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            items(StStatus.entries) { status ->
+                                PaperPill(
+                                    text = status.label,
+                                    selected = status in stStatuses,
+                                    onClick = {
+                                        stStatuses = if (status in stStatuses) stStatuses - status else stStatuses + status
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        FilterHeader("上市天数", "按行情日计算，过滤次新股")
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            items(listOf(0, 60, 120, 250, 500)) { days ->
+                                PaperPill(
+                                    text = if (days == 0) "不限" else "≥${days}天",
+                                    selected = minDays == days,
+                                    onClick = { minDays = days },
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        FilterHeader("停牌", "停牌股无法按次日开盘成交")
+                        PaperPill(
+                            text = "排除停牌",
+                            selected = excludeSuspended,
+                            onClick = { excludeSuspended = !excludeSuspended },
+                        )
+                    }
+
+                    item {
+                        FilterHeader(
+                            title = "板块",
+                            hint = "可多选；与上方资产池联动",
+                            action = if (boards.size == StrategyFilters().boards.size) "清空" else "全选",
+                            onAction = {
+                                boards = if (boards.size == StrategyFilters().boards.size) {
+                                    emptySet()
+                                } else {
+                                    StrategyFilters().boards
+                                }
+                            },
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            items(listOf(Board.SH_MAIN, Board.SZ_MAIN, Board.CHINEXT, Board.STAR, Board.BSE, Board.ETF)) { board ->
+                                PaperPill(
+                                    text = board.label,
+                                    selected = board in boards,
+                                    onClick = {
+                                        boards = if (board in boards) boards - board else boards + board
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        FilterHeader("价格 / 流动性", "最低价、20 日平均成交额（亿元）")
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CompactNumberField("最低价", minPrice, { minPrice = it }, Modifier.weight(1f))
+                            CompactNumberField("20日均额(亿)", minAmount, { minAmount = it }, Modifier.weight(1f))
+                        }
+                    }
+
+                    item {
+                        FilterHeader("估值上限", "留空=不限；亏损股在设 PE 上限时会被排除")
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CompactNumberField("PE ≤", maxPe, { maxPe = it }, Modifier.weight(1f))
+                            CompactNumberField("PB ≤", maxPb, { maxPb = it }, Modifier.weight(1f))
+                        }
+                    }
+
+                    item {
+                        FilterHeader("市值区间", "单位：亿元；留空=不限")
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CompactNumberField("最小市值(亿)", minCap, { minCap = it }, Modifier.weight(1f))
+                            CompactNumberField("最大市值(亿)", maxCap, { maxCap = it }, Modifier.weight(1f))
+                        }
+                    }
+
+                    item {
+                        Text(
+                            "央企/地方国企/民企/外资/无实控人来自东方财富 F10 实控人与第一大股东名称推断，不是官方标签；" +
+                                "资料未同步时企业性质多为“未知”，请先在数据页点“基础资料”。",
+                            fontSize = 8.sp,
+                            color = ShiguPalette.InkFaint,
+                            lineHeight = 12.sp,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier
+                            .weight(0.35f)
+                            .border(1.dp, ShiguPalette.InkFaint, RoundedCornerShape(10.dp))
+                            .clickable {
+                                owners = OwnerType.entries.toSet()
+                                stStatuses = setOf(StStatus.NORMAL)
+                                minDays = 0
+                                excludeSuspended = false
+                                boards = StrategyFilters().boards
+                                minPrice = "2"
+                                minAmount = "0.5"
+                                maxPe = ""
+                                maxPb = ""
+                                minCap = ""
+                                maxCap = ""
+                            }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("重置", fontSize = 12.sp, color = ShiguPalette.InkSoft)
+                    }
+                    Box(Modifier.weight(0.65f)) {
+                        SketchButton(
+                            label = "应用基础过滤",
+                            onClick = {
+                                val cleanOwners = if (owners.isEmpty()) OwnerType.entries.toSet() else owners
+                                val cleanSt = if (stStatuses.isEmpty()) setOf(StStatus.NORMAL) else stStatuses
+                                val cleanBoards = if (boards.isEmpty()) StrategyFilters().boards else boards
+                                onApply(
+                                    initial.copy(
+                                        minPrice = minPrice.toDoubleOrNull() ?: 0.0,
+                                        minAmount20 = (minAmount.toDoubleOrNull() ?: 0.0) * 1e8,
+                                        maxPe = maxPe.toDoubleOrNull(),
+                                        maxPb = maxPb.toDoubleOrNull(),
+                                        minMarketCap = minCap.toDoubleOrNull()?.times(1e8),
+                                        maxMarketCap = maxCap.toDoubleOrNull()?.times(1e8),
+                                        excludeSt = cleanSt == setOf(StStatus.NORMAL),
+                                        stStatuses = cleanSt,
+                                        owners = cleanOwners,
+                                        minListedDays = minDays,
+                                        excludeSuspended = excludeSuspended,
+                                        boards = cleanBoards,
+                                    ),
+                                )
+                            },
+                            enabled = owners.isNotEmpty() && stStatuses.isNotEmpty() && boards.isNotEmpty(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterHeader(
+    title: String,
+    hint: String? = null,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = ShiguPalette.InkSoft)
+            if (hint != null) Text(hint, fontSize = 8.sp, color = ShiguPalette.InkFaint)
+        }
+        if (action != null && onAction != null) {
+            Text(
+                action,
+                fontSize = 9.sp,
+                color = ShiguPalette.Ink,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clickable(onClick = onAction)
+                    .padding(start = 8.dp, bottom = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactNumberField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { raw ->
+            onValueChange(raw.filter { it.isDigit() || it == '.' || it == '-' }.take(10))
+        },
+        modifier = modifier,
+        label = { Text(label, fontSize = 8.sp) },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodySmall,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+    )
+}
+
+private fun filterSummary(f: StrategyFilters): String {
+    val parts = ArrayList<String>(8)
+    if (f.owners.size < OwnerType.entries.size) parts += f.ownerLabel
+    if (f.stStatuses != setOf(StStatus.NORMAL)) parts += f.stLabel
+    if (f.minListedDays > 0) parts += "上市≥${f.minListedDays}天"
+    if (f.excludeSuspended) parts += "排除停牌"
+    if (f.boards != StrategyFilters().boards) parts += f.boards.joinToString("/") { it.label }
+    f.maxPe?.let { parts += "PE≤${trimNum(it)}" }
+    f.maxPb?.let { parts += "PB≤${trimNum(it)}" }
+    f.minMarketCap?.let { parts += "市值≥${trimNum(it / 1e8)}亿" }
+    f.maxMarketCap?.let { parts += "市值≤${trimNum(it / 1e8)}亿" }
+    if (f.minPrice > 2.0) parts += "价≥${trimNum(f.minPrice)}"
+    if (f.minAmount20 > 50_000_000.0) parts += "均额≥${trimNum(f.minAmount20 / 1e8)}亿"
+    return parts.joinToString(" · ")
+}
+
+private fun trimNum(v: Double): String =
+    if (v == v.toLong().toDouble()) v.toLong().toString()
+    else String.format(java.util.Locale.CHINA, "%.2f", v)
 
 private fun formatCount(v: Long): String = when {
     v >= 1_000_000 -> "%.1fM".format(v / 1_000_000.0)

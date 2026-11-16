@@ -15,6 +15,7 @@ import com.shigu.core.ScreenerResult
 import com.shigu.core.SinceCreationResult
 import com.shigu.core.Stock
 import com.shigu.core.StrategyConfig
+import com.shigu.core.StrategyFilters
 import com.shigu.core.StrategyPresets
 import com.shigu.core.SyncMode
 import com.shigu.core.SyncState
@@ -128,9 +129,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun fullSync() = startSync(SyncMode.FULL, Universe.ALL)
     fun valuationSync() = startValuationSync(Universe.TOP_800)
 
+    /** 企业性质/上市日期/财务快照；不跟行情同步绑定，避免每次更新都多打几十个请求。 */
+    fun profileSync() {
+        viewModelScope.launch {
+            syncManager.syncProfiles()
+            refreshLocal()
+            runScreen()
+        }
+    }
+
     private fun startSync(mode: SyncMode, universe: Universe) {
         viewModelScope.launch {
             syncManager.sync(mode, universe)
+            // 首次行情同步后顺手补一次基础资料；之后由数据页手动刷新，避免每天多打几十个请求。
+            if (withContext(Dispatchers.IO) { db.countProfiles() } < 100) {
+                syncManager.syncProfiles()
+            }
             refreshLocal()
             refreshSimulations(force = true)
         }
@@ -198,6 +212,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             factors = factors,
             maxPositions = topN,
         )
+        _state.update { it.copy(screenConfig = cfg) }
+        runScreen()
+    }
+
+    fun applyFilters(filters: StrategyFilters) {
+        val cfg = _state.value.screenConfig.copy(filters = filters)
         _state.update { it.copy(screenConfig = cfg) }
         runScreen()
     }

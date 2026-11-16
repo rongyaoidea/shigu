@@ -17,6 +17,8 @@ enum class FactorKey(
     val description: String,
     val currentOnly: Boolean = false,
     val crossSectional: Boolean = false,
+    /** 只有当前快照、没有历史序列；回测里只能当常数用，必须提示前视偏差。 */
+    val snapshotOnly: Boolean = false,
 ) {
     // —— 阻力支撑 / 趋势 ——
     RSRS_RIGHT("RSRS右偏", "RSRS", true, "", "趋势", "光大 RSRS：18 日 high~low 回归斜率的 60 日标准分 × R² × 斜率；越高越强。"),
@@ -64,6 +66,20 @@ enum class FactorKey(
     PE("低PE", "PE", false, "倍", "估值", "当前 PE-TTM，越低越好；历史回测需要估值历史。", true),
     PB("低PB", "PB", false, "倍", "估值", "当前 PB，越低越好；历史回测需要估值历史。", true),
     MARKET_CAP("小市值", "市值", false, "亿", "估值", "当前总市值，越小越好；A 股小市值因子阶段性有效，风险也高。", true),
+
+    // —— 基础属性 ——
+    LISTED_DAYS("上市天数", "上市", true, "天", "基础", "上市自然日；越成熟越少次新股波动。可按上市日过滤。"),
+
+    // —— 基本面（最新报告期快照；历史回测前视偏差）——
+    ROE("高ROE", "ROE", true, "%", "基本面", "最新报告期加权 ROE；越高盈利能力越强。", true, false, true),
+    GROSS_MARGIN("高毛利", "毛利", true, "%", "基本面", "最新报告期毛利率；越高定价能力越强。", true, false, true),
+    NET_MARGIN("高净利率", "净利率", true, "%", "基本面", "最新报告期销售净利率；越高费用/成本控制越好。", true, false, true),
+    REVENUE_GROWTH("营收增速", "营收", true, "%", "基本面", "最新报告期营业收入同比增速。", true, false, true),
+    PROFIT_GROWTH("净利增速", "净利", true, "%", "基本面", "最新报告期归母净利润同比增速。", true, false, true),
+    DEBT_RATIO("低负债", "负债率", false, "%", "基本面", "最新报告期资产负债率；越低财务风险越小。", true, false, true),
+    EPS("高EPS", "EPS", true, "元", "基本面", "最新报告期基本每股收益。", true, false, true),
+    BPS("高BPS", "BPS", true, "元", "基本面", "最新报告期每股净资产。", true, false, true),
+    OCFPS("现金流", "每股现金", true, "元", "基本面", "最新报告期每股经营活动现金流；越高盈利质量越好。", true, false, true),
     ;
 
     companion object {
