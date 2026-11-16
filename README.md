@@ -4,6 +4,7 @@
 > 仅自用，不接券商、不荐股、不构成投资建议。
 >
 > 仓库：https://github.com/rongyaoidea/shigu （private）
+> Release：https://github.com/rongyaoidea/shigu/releases/tag/v0.1.0
 
 ## 现在有什么
 
