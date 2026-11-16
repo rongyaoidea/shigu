@@ -1,6 +1,6 @@
 # 实现状态（2026-11-17）
 
-> GitHub 仓库：https://github.com/rongyaoidea/shigu （private）
+> GitHub 仓库：https://github.com/rongyaoidea/shigu （public）
 > v0.1.0 Release 已由 GitHub Actions 用仓库 Secrets 中的 release keystore 签名并发布：
 > https://github.com/rongyaoidea/shigu/releases/tag/v0.1.0
 

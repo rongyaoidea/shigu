@@ -3,7 +3,7 @@
 > 工作名。Android APK，已跑通：本地行情同步 → 因子筛选 → 策略回测 → 创建后纸面模拟 → 每日调仓红标/通知。
 > 仅自用，不接券商、不荐股、不构成投资建议。
 >
-> 仓库：https://github.com/rongyaoidea/shigu （private）
+> 仓库：https://github.com/rongyaoidea/shigu （public）
 > Release：https://github.com/rongyaoidea/shigu/releases/tag/v0.1.0
 
 ## 现在有什么
