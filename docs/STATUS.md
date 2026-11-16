@@ -42,6 +42,9 @@
 ## 已验证的界面
 
 - `design/screens/app-factors.png`：6,468 资产、股票/ETF/全部、TopK、存为策略。
+- `design/screens/app-basic-filter.png`：企业性质、ST/*ST、上市天数、停牌、板块、价格/流动性、PE/PB/市值过滤。
+- `design/screens/app-data-profile.png`：基础资料 5,578 只、报告期 2026-09-30。
+- `design/screens/app-stock-profile.png`：央企徽标、实控人/第一大股东/上市天数、ROE/毛利率/净利率。
 - `design/screens/app-strategies.png`：策略卡、回测、创建后。
 - `design/screens/app-strategy-alert.png`：本地测试注入持仓差异后，策略卡红色调仓标志。
 - `design/screens/app-simulation-alert.png`：模拟页“今日调仓”和红标。
