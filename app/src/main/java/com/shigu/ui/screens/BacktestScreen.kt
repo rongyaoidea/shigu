@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shigu.core.BacktestResult
 import com.shigu.core.FactorWeight
+import com.shigu.core.OwnerType
+import com.shigu.core.StStatus
 import com.shigu.core.StrategyConfig
 import com.shigu.core.Trade
 import com.shigu.core.formatPct
@@ -155,6 +157,21 @@ fun BacktestScreen(
                                 )
                             }
                         }
+                    }
+                    val filterBits = buildList {
+                        val f = selected.filters
+                        if (f.owners.size < OwnerType.entries.size) add(f.ownerLabel)
+                        if (f.stStatuses != setOf(StStatus.NORMAL)) add(f.stLabel)
+                        if (f.minListedDays > 0) add("上市≥${f.minListedDays}天")
+                        if (f.excludeSuspended) add("排除停牌")
+                    }
+                    if (filterBits.isNotEmpty()) {
+                        Text(
+                            "基础过滤：${filterBits.joinToString(" · ")}",
+                            fontSize = 8.5.sp,
+                            color = ShiguPalette.InkFaint,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
                     }
                     Text(
                         "编辑因子 →",
