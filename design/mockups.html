@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拾股 · A股选股工作台 — UI 设计 v0.1</title>
+<link rel="stylesheet" href="mockups.css">
+</head>
+<body>
+
+<!-- ============ shared svg defs ============ -->
+<svg class="svg-defs" aria-hidden="true">
+  <defs>
+    <filter id="wob" x="-12%" y="-12%" width="124%" height="124%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="3" seed="11" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="1.7" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="wob2" x="-12%" y="-12%" width="124%" height="124%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="29" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="2.3" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="wob-soft" x="-14%" y="-14%" width="128%" height="128%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="0.9" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+
+    <symbol id="i-filter" viewBox="0 0 24 24">
+      <path d="M3.6 5.2h16.8l-6.7 7.6v6.1l-3.5 2.1v-8.2L3.6 5.2z"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24">
+      <path d="M2.9 12S6.4 6.2 12 6.2 21.1 12 21.1 12s-3.5 5.8-9.1 5.8S2.9 12 2.9 12z"/>
+      <circle cx="12" cy="12" r="2.7"/>
+    </symbol>
+    <symbol id="i-book" viewBox="0 0 24 24">
+      <path d="M4.3 4.6h10.3a4 4 0 0 1 4 4V20H8.5a4.2 4.2 0 0 1-4.2-4.2V4.6z"/>
+      <path d="M8.5 20a4.2 4.2 0 0 1 4.2-4.2h5.9"/>
+    </symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24">
+      <path d="M4.2 4v16h15.6"/>
+      <path d="M7.2 15.2l3.7-4.6 3 2.8 4.9-6.1"/>
+    </symbol>
+    <symbol id="i-back" viewBox="0 0 24 24">
+      <path d="M14.8 5l-7 7 7 7"/>
+    </symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24">
+      <path d="M6.6 9.2a5.4 5.4 0 0 1 10.8 0c0 4.8 2 5.9 2 5.9H4.6s2-1.1 2-5.9z"/>
+      <path d="M10 18.8a2.2 2.2 0 0 0 4 0"/>
+    </symbol>
+    <symbol id="i-star" viewBox="0 0 24 24">
+      <path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8L12 3.8z"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24">
+      <path d="M5 12h13M13 6l6 6-6 6"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <path d="M4.5 12.5l5 5 10-11"/>
+    </symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24">
+      <path d="M6 21V4.5M6 5h11l-2.2 4 2.2 4H6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="board-head">
+  <div class="kicker">UI DESIGN / v0.1 / 2026-11-16 / DATA IS ILLUSTRATIVE</div>
+  <div class="title-row">
+    <h1>拾股<span class="title-dot">·</span><span class="title-sub">A 股选股工作台</span></h1>
+    <div class="title-mark">拾</div>
+  </div>
+  <p class="lede">把条件写清楚，把判断记下来。</p>
+  <p class="lede lede-2">沿用 <b>ssqpick</b> 的纸墨语言：暖白纸面、墨线手绘、单一强调色、极小过冲的弹簧。界面拒绝渐变、发光、粒子和“荐股”话术。</p>
+  <div class="principles">
+    <div class="principle"><span class="p-no">01</span><b>条件先行</b><span>先写清楚要找什么，再看结果。</span></div>
+    <div class="principle"><span class="p-no">02</span><b>涨跌是唯一的彩色</b><span>红涨绿跌只给价格，其余全部墨色。</span></div>
+    <div class="principle"><span class="p-no">03</span><b>复盘，不荐股</b><span>记录自己的判断，不下买卖结论。</span></div>
+  </div>
+</header>
+
+<main class="board">
+
+  <!-- ================= 01 选股 ================= -->
+  <section class="screen-set" data-screen="pick">
+    <div class="screen-label"><span class="s-no">01</span><span class="s-name">选股</span><span class="s-intent">筛股台：全市场 → 条件 → 候选</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar">
+          <span class="sb-time">9:41</span>
+          <span class="sb-icons">
+            <svg viewBox="0 0 18 12" class="sb-ic"><path d="M1 9h2v2H1zM5 6.5h2V11H5zM9 4h2v7H9zM13 1.5h2V11h-2z" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 16 12" class="sb-ic"><path d="M1.5 4.2a10 10 0 0 1 13 0M4 6.8a6.4 6.4 0 0 1 8 0M6.5 9.2a2.9 2.9 0 0 1 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="10.6" r=".8" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 12" class="sb-ic"><rect x=".8" y=".8" width="20" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.2" fill="currentColor"/><path d="M22.6 4.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+
+        <header class="app-header">
+          <div class="brand-row"><span class="brand">拾股</span><span class="page-name">选股</span></div>
+          <div class="sub">条件筛选 · 不是荐股</div>
+          <div class="hr"></div>
+        </header>
+
+        <main class="content">
+          <div class="tape card wob2">
+            <div class="tape-item"><span class="ti-name">上证</span><span class="ti-val num">3,412.68</span><span class="ti-chg up num">▲ +0.62%</span></div>
+            <div class="tape-sep"></div>
+            <div class="tape-item"><span class="ti-name">深证</span><span class="ti-val num">10,846.31</span><span class="ti-chg up num">▲ +0.81%</span></div>
+            <div class="tape-sep"></div>
+            <div class="tape-item"><span class="ti-name">创业板</span><span class="ti-val num">2,241.07</span><span class="ti-chg down num">▼ -0.34%</span></div>
+          </div>
+
+          <div class="card hero">
+            <div class="hero-top">
+              <span class="t-label">今日筛股</span>
+              <span class="t-meta">10:12 更新 · 延迟 15 分钟</span>
+            </div>
+            <div class="hero-body">
+              <div class="hero-left">
+                <div class="hero-count"><span class="big num">37</span><span class="unit">只候选</span></div>
+                <div class="hero-sub num">全市场 5,326 · 6 个条件</div>
+              </div>
+              <div class="funnel-wrap">
+                <svg class="funnel" viewBox="0 0 72 66" fill="none">
+                  <path d="M6 7h60L42.5 34.5v17L29.5 59V34.5L6 7Z" stroke="#23201C" stroke-width="1.7" stroke-linejoin="round"/>
+                  <path d="M15 15h42M20 23h32M26 31h20" stroke="#B9B0A3" stroke-width="1.2" stroke-dasharray="2 3" stroke-linecap="round"/>
+                  <path d="M32 50h8" stroke="#D8453A" stroke-width="2.2" stroke-linecap="round"/>
+                </svg>
+                <div class="funnel-label num">5,326 <span>→</span> 37</div>
+              </div>
+            </div>
+            <div class="hero-stats">
+              <div class="hs"><span class="hs-k">新进</span><span class="hs-v num">8</span></div>
+              <div class="hs"><span class="hs-k">移出</span><span class="hs-v num">5</span></div>
+              <div class="hs"><span class="hs-k">已在观察</span><span class="hs-v num">12</span></div>
+              <button class="btn mini">看候选 <svg class="ic ic-12"><use href="#i-arrow"/></svg></button>
+            </div>
+          </div>
+
+          <div class="section-line">
+            <span class="t-label">常用条件</span>
+            <span class="t-meta">已保存 12 个</span>
+          </div>
+
+          <div class="preset-row">
+            <div class="preset card">
+              <span class="preset-name">低估值<br>高股息</span>
+              <span class="preset-count num">23</span>
+            </div>
+            <div class="preset card wob2">
+              <span class="preset-name">放量<br>突破</span>
+              <span class="preset-count num">11</span>
+            </div>
+            <div class="preset card">
+              <span class="preset-name">业绩<br>预增</span>
+              <span class="preset-count num">18</span>
+            </div>
+          </div>
+
+          <div class="list-head">
+            <span class="t-label">命中候选</span>
+            <span class="sort">按股息率 <span class="sort-arrow">↓</span></span>
+          </div>
+
+          <div class="card stock-list">
+            <div class="stock-row">
+              <div class="sr-main">
+                <div class="sr-name">中国神华 <span class="sr-code num">601088</span><span class="sr-mkt">沪主板</span></div>
+                <div class="sr-meta"><span class="mini-hl">高股息</span> PE 11.2 · 股息 5.6% · 量比 1.21</div>
+              </div>
+              <svg class="spark" data-seed="8" data-trend="up"></svg>
+              <div class="sr-quote">
+                <div class="sr-price num">41.26</div>
+                <div class="sr-chg up num">▲ +1.82%</div>
+              </div>
+            </div>
+            <div class="stock-row">
+              <div class="sr-main">
+                <div class="sr-name">招商银行 <span class="sr-code num">600036</span><span class="sr-mkt">沪主板</span></div>
+                <div class="sr-meta"><span class="mini-hl">高股息</span> PE 6.9 · 股息 4.8% · PB 0.92</div>
+              </div>
+              <svg class="spark" data-seed="13" data-trend="up"></svg>
+              <div class="sr-quote">
+                <div class="sr-price num">43.15</div>
+                <div class="sr-chg up num">▲ +1.22%</div>
+              </div>
+            </div>
+            <div class="stock-row">
+              <div class="sr-main">
+                <div class="sr-name">陕西煤业 <span class="sr-code num">601225</span><span class="sr-mkt">沪主板</span></div>
+                <div class="sr-meta"><span class="mini-hl">高股息</span> PE 9.4 · 股息 6.1% · 量比 0.86</div>
+              </div>
+              <svg class="spark" data-seed="23" data-trend="down"></svg>
+              <div class="sr-quote">
+                <div class="sr-price num">24.63</div>
+                <div class="sr-chg down num">▼ -0.41%</div>
+              </div>
+            </div>
+            <div class="list-more">查看全部 37 只 <svg class="ic ic-12"><use href="#i-arrow"/></svg></div>
+          </div>
+
+          <div class="card day-note">
+            <div class="day-head"><span class="t-label">今日纸签</span><span class="t-meta num">11-16 周一 · 10:12</span></div>
+            <p>上涨 2,861 家，银行、煤炭、电力居前。筛选命中 37 只，8 只新进。</p>
+            <p class="day-sub">筛选只是缩小范围，不是提高胜率。</p>
+          </div>
+
+          <p class="footnote">筛选结果是条件的子集，不是买入建议。样本 37 只，按股息率降序。</p>
+        </main>
+
+        <nav class="tabbar">
+          <div class="tab active"><span class="ico"><svg class="ic"><use href="#i-filter"/></svg></span><span class="tab-label">选股</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-eye"/></svg></span><span class="tab-label">观察</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-book"/></svg></span><span class="tab-label">复盘</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-chart"/></svg></span><span class="tab-label">市场</span></div>
+        </nav>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 筛选条件 ================= -->
+  <section class="screen-set" data-screen="filter">
+    <div class="screen-label"><span class="s-no">02</span><span class="s-name">筛选条件</span><span class="s-intent">条件卡编辑 + 实时命中数</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar">
+          <span class="sb-time">9:41</span>
+          <span class="sb-icons">
+            <svg viewBox="0 0 18 12" class="sb-ic"><path d="M1 9h2v2H1zM5 6.5h2V11H5zM9 4h2v7H9zM13 1.5h2V11h-2z" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 16 12" class="sb-ic"><path d="M1.5 4.2a10 10 0 0 1 13 0M4 6.8a6.4 6.4 0 0 1 8 0M6.5 9.2a2.9 2.9 0 0 1 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="10.6" r=".8" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 12" class="sb-ic"><rect x=".8" y=".8" width="20" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.2" fill="currentColor"/><path d="M22.6 4.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+
+        <div class="topbar">
+          <button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button>
+          <span class="topbar-title">筛选条件</span>
+          <button class="text-btn">重置</button>
+        </div>
+        <div class="hr hr-tight"></div>
+
+        <main class="content content-tight">
+          <div class="card hit-card">
+            <div class="hit-left">
+              <span class="t-label">当前命中</span>
+              <div class="hit-count"><span class="num hit-big">37</span><span class="hit-den num">/ 5,326</span></div>
+            </div>
+            <div class="hit-right">
+              <div class="hit-note">条件越多，样本越小。<br>37 只不是 37 个机会。</div>
+            </div>
+          </div>
+
+          <div class="cond-group card">
+            <div class="cg-head"><span class="cg-title">范围</span><span class="cg-state">沪深主板 · 创业板</span></div>
+            <div class="chip-row">
+              <span class="chip on">沪深主板</span>
+              <span class="chip on">创业板</span>
+              <span class="chip">科创板</span>
+              <span class="chip">北交所</span>
+            </div>
+            <div class="toggle-row"><span>排除 ST / *ST</span><span class="toggle on"></span></div>
+            <div class="toggle-row"><span>排除上市 &lt; 60 日</span><span class="toggle on"></span></div>
+            <div class="toggle-row"><span>排除停牌</span><span class="toggle on"></span></div>
+          </div>
+
+          <div class="cond-group card wob2">
+            <div class="cg-head"><span class="cg-title">估值</span><span class="cg-state">3 项</span></div>
+            <div class="range-row">
+              <div class="rr-top"><span>PE-TTM</span><span class="rr-val num">≤ 20.0</span></div>
+              <div class="slider"><span class="slider-fill" style="width:33%"></span><span class="knob" style="left:33%"></span></div>
+            </div>
+            <div class="range-row">
+              <div class="rr-top"><span>股息率</span><span class="rr-val num">≥ 3.0%</span></div>
+              <div class="slider"><span class="slider-fill" style="width:38%"></span><span class="knob" style="left:38%"></span></div>
+            </div>
+            <div class="range-row">
+              <div class="rr-top"><span>PB</span><span class="rr-val num">≤ 2.5</span></div>
+              <div class="slider"><span class="slider-fill" style="width:25%"></span><span class="knob" style="left:25%"></span></div>
+            </div>
+          </div>
+
+          <div class="cond-group card">
+            <div class="cg-head"><span class="cg-title">质量</span><span class="cg-state">2 项</span></div>
+            <div class="range-row">
+              <div class="rr-top"><span>ROE（近 12 月）</span><span class="rr-val num">≥ 12.0%</span></div>
+              <div class="slider"><span class="slider-fill" style="width:56%"></span><span class="knob" style="left:56%"></span></div>
+            </div>
+            <div class="range-row">
+              <div class="rr-top"><span>资产负债率</span><span class="rr-val num">≤ 60%</span></div>
+              <div class="slider"><span class="slider-fill" style="width:60%"></span><span class="knob" style="left:60%"></span></div>
+            </div>
+          </div>
+
+          <div class="cond-group card wob2 cond-collapsed">
+            <div class="cg-head"><span class="cg-title">行情</span><span class="cg-state">1 项启用 · 3 项可选</span></div>
+            <div class="collapsed-hint">收盘价站上 60 日均线 · 另 2 项可选 <span class="cc-open">展开 +</span></div>
+          </div>
+        </main>
+
+        <div class="actionbar">
+          <div class="ab-count"><span class="num ab-num">37</span><span class="ab-label">只命中</span></div>
+          <button class="btn ab-btn">保存并查看</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 个股 ================= -->
+  <section class="screen-set" data-screen="stock">
+    <div class="screen-label"><span class="s-no">03</span><span class="s-name">个股</span><span class="s-intent">手绘 K 线 + 命中理由 + 风险前置</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar">
+          <span class="sb-time">9:41</span>
+          <span class="sb-icons">
+            <svg viewBox="0 0 18 12" class="sb-ic"><path d="M1 9h2v2H1zM5 6.5h2V11H5zM9 4h2v7H9zM13 1.5h2V11h-2z" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 16 12" class="sb-ic"><path d="M1.5 4.2a10 10 0 0 1 13 0M4 6.8a6.4 6.4 0 0 1 8 0M6.5 9.2a2.9 2.9 0 0 1 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="10.6" r=".8" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 12" class="sb-ic"><rect x=".8" y=".8" width="20" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.2" fill="currentColor"/><path d="M22.6 4.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+
+        <div class="topbar">
+          <button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button>
+          <span class="topbar-title">个股</span>
+          <button class="icon-btn"><svg class="ic"><use href="#i-star"/></svg></button>
+        </div>
+        <div class="hr hr-tight"></div>
+
+        <main class="content content-stock">
+          <div class="stock-title">
+            <div class="st-name-row">
+              <span class="st-name">招商银行</span>
+              <span class="st-code num">600036</span>
+              <span class="st-tag">沪主板</span>
+              <span class="st-tag">沪股通</span>
+            </div>
+            <div class="st-price-row">
+              <div class="st-price num">43.15</div>
+              <div class="st-chg up num">+0.52&nbsp;&nbsp;+1.22%</div>
+              <div class="st-range">距 52 周高 <span class="num">2.8%</span></div>
+            </div>
+          </div>
+
+          <div class="card kline-card">
+            <div class="kline-head">
+              <span class="t-label">日 K · 前复权</span>
+              <span class="t-meta">60 日 · MA20</span>
+            </div>
+            <div id="kline"></div>
+          </div>
+
+          <div class="metric-grid">
+            <div class="metric"><span class="m-k">总市值</span><span class="m-v num">1.09 万亿</span></div>
+            <div class="metric"><span class="m-k">PE-TTM</span><span class="m-v num">6.9</span></div>
+            <div class="metric"><span class="m-k">PB</span><span class="m-v num">0.92</span></div>
+            <div class="metric"><span class="m-k">股息率</span><span class="m-v num">4.8%</span></div>
+            <div class="metric"><span class="m-k">ROE</span><span class="m-v num">15.2%</span></div>
+            <div class="metric"><span class="m-k">换手率</span><span class="m-v num">0.38%</span></div>
+          </div>
+
+          <div class="card reason-card">
+            <div class="reason-head">
+              <span class="t-label">为什么出现在这里</span>
+              <span class="mini-hl">命中 6 个条件</span>
+            </div>
+            <div class="check-grid">
+              <div class="check-row"><svg class="ic ic-14"><use href="#i-check"/></svg><span>股息率 ≥ 3%</span><span class="cr-val num">4.8%</span></div>
+              <div class="check-row"><svg class="ic ic-14"><use href="#i-check"/></svg><span>PE-TTM ≤ 20</span><span class="cr-val num">6.9</span></div>
+              <div class="check-row"><svg class="ic ic-14"><use href="#i-check"/></svg><span>PB ≤ 2.5</span><span class="cr-val num">0.92</span></div>
+              <div class="check-row"><svg class="ic ic-14"><use href="#i-check"/></svg><span>ROE ≥ 12%</span><span class="cr-val num">15.2%</span></div>
+              <div class="check-row"><svg class="ic ic-14"><use href="#i-check"/></svg><span>负债率 ≤ 60%</span><span class="cr-val num">52.1%</span></div>
+              <div class="check-row"><svg class="ic ic-14"><use href="#i-check"/></svg><span>站上 MA60</span><span class="cr-val num">+5.2%</span></div>
+            </div>
+            <div class="reason-note">条件命中只说明它符合筛选，不说明它便宜。</div>
+          </div>
+
+          <div class="card risk-card">
+            <div class="risk-head"><svg class="ic ic-14"><use href="#i-flag"/></svg><span>先看风险</span><span class="t-meta">3 条</span></div>
+            <div class="risk-row"><span class="risk-date num">12-08</span><span>解禁 0.8% 流通股</span></div>
+            <div class="risk-row"><span class="risk-date num">—</span><span>商誉 / 净资产 0.3%</span></div>
+            <div class="risk-row"><span class="risk-date num">近 30 日</span><span>3 份减持公告</span></div>
+          </div>
+
+          <div class="card news-link">
+            <span class="t-label">公告</span>
+            <span class="nl-text">11-14 业绩说明会 · 近 30 天共 3 条</span>
+            <svg class="ic ic-12"><use href="#i-arrow"/></svg>
+          </div>
+
+          <div class="card note-prompt">
+            <div class="np-main">
+              <span class="t-label">加入观察前，写一句判断</span>
+              <p>“为什么是它？跌 10% 你还拿得住吗？”</p>
+            </div>
+            <svg class="ic ic-14"><use href="#i-arrow"/></svg>
+          </div>
+        </main>
+
+        <div class="actionbar actionbar-stock">
+          <button class="btn ghost ab-half">写判断</button>
+          <button class="btn ab-half">加入观察</button>
+        </div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 观察 ================= -->
+  <section class="screen-set" data-screen="watch">
+    <div class="screen-label"><span class="s-no">04</span><span class="s-name">观察</span><span class="s-intent">观察池：入选价、超额、异动</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar">
+          <span class="sb-time">9:41</span>
+          <span class="sb-icons">
+            <svg viewBox="0 0 18 12" class="sb-ic"><path d="M1 9h2v2H1zM5 6.5h2V11H5zM9 4h2v7H9zM13 1.5h2V11h-2z" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 16 12" class="sb-ic"><path d="M1.5 4.2a10 10 0 0 1 13 0M4 6.8a6.4 6.4 0 0 1 8 0M6.5 9.2a2.9 2.9 0 0 1 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="10.6" r=".8" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 12" class="sb-ic"><rect x=".8" y=".8" width="20" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.2" fill="currentColor"/><path d="M22.6 4.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+
+        <header class="app-header">
+          <div class="brand-row"><span class="brand">拾股</span><span class="page-name">观察</span></div>
+          <div class="sub">入选只是开始 · 判断要写下来</div>
+          <div class="hr"></div>
+        </header>
+
+        <main class="content">
+          <div class="card watch-summary">
+            <div class="ws-main">
+              <span class="t-label">观察池</span>
+              <div class="ws-count"><span class="num ws-big">12</span><span class="ws-unit">只</span></div>
+            </div>
+            <div class="ws-col"><span class="ws-k">今日</span><span class="ws-v num"><b class="up">3 涨</b> · <b class="down">5 跌</b> · 4 平</span></div>
+            <div class="ws-col"><span class="ws-k">中位跟踪</span><span class="ws-v num">18 天</span></div>
+          </div>
+
+          <div class="seg">
+            <div class="seg-item active">全部 <span class="num">12</span></div>
+            <div class="seg-item">今日异动 <span class="num">3</span></div>
+            <div class="seg-item">待复盘 <span class="num">5</span></div>
+          </div>
+
+          <div class="list-head">
+            <span class="t-label">按今日异动</span>
+            <span class="sort">入选时间 <span class="sort-arrow">↓</span></span>
+          </div>
+
+          <div class="card watch-list">
+            <div class="watch-row">
+              <div class="wr-top">
+                <div class="sr-name">招商银行 <span class="sr-code num">600036</span></div>
+                <div class="wr-quote"><span class="sr-price num">43.15</span><span class="sr-chg up num">▲ +1.22%</span></div>
+              </div>
+              <div class="wr-mid">
+                <span class="wr-meta num">入选 41.03 · 10-21 · 26 天</span>
+                <span class="wr-badge num up">+5.2%</span>
+                <span class="wr-badge num">超额 +2.8pp</span>
+              </div>
+              <div class="wr-bottom">
+                <span class="mini-hl">高股息</span>
+                <span class="wr-reason">估值低 + 股息稳</span>
+                <span class="wr-bell"><svg class="ic ic-14"><use href="#i-bell"/></svg></span>
+              </div>
+            </div>
+
+            <div class="watch-row">
+              <div class="wr-top">
+                <div class="sr-name">中国神华 <span class="sr-code num">601088</span></div>
+                <div class="wr-quote"><span class="sr-price num">41.26</span><span class="sr-chg up num">▲ +1.82%</span></div>
+              </div>
+              <div class="wr-mid">
+                <span class="wr-meta num">入选 39.80 · 11-03 · 13 天</span>
+                <span class="wr-badge num up">+3.7%</span>
+                <span class="wr-badge num">超额 +1.9pp</span>
+              </div>
+              <div class="wr-bottom">
+                <span class="mini-hl">高股息</span>
+                <span class="wr-reason">煤价企稳，等分红</span>
+                <span class="wr-bell"><svg class="ic ic-14"><use href="#i-bell"/></svg></span>
+              </div>
+            </div>
+
+            <div class="watch-row">
+              <div class="wr-top">
+                <div class="sr-name">中芯国际 <span class="sr-code num">688981</span></div>
+                <div class="wr-quote"><span class="sr-price num">88.42</span><span class="sr-chg down num">▼ -2.41%</span></div>
+              </div>
+              <div class="wr-mid">
+                <span class="wr-meta num">入选 92.10 · 11-07 · 9 天</span>
+                <span class="wr-badge num down">-4.0%</span>
+                <span class="wr-badge num down">超额 -2.2pp</span>
+              </div>
+              <div class="wr-bottom">
+                <span class="mini-hl">放量突破</span>
+                <span class="wr-reason">跌破 20 日线，准备复盘</span>
+                <span class="wr-bell"><svg class="ic ic-14"><use href="#i-bell"/></svg></span>
+              </div>
+            </div>
+            <div class="list-more">查看全部 12 只 <svg class="ic ic-12"><use href="#i-arrow"/></svg></div>
+          </div>
+
+          <div class="card alert-card">
+            <div class="alert-head"><span class="t-label">今日异动</span><span class="t-meta">3 条提醒</span></div>
+            <div class="alert-row"><span class="alert-dot"></span><span><b>中国神华</b> 量比 2.1 · 20 日同时段</span><span class="alert-time num">10:12</span></div>
+            <div class="alert-row"><span class="alert-dot"></span><span><b>中芯国际</b> 收盘价跌破 20 日均线</span><span class="alert-time num">09:48</span></div>
+            <div class="alert-row"><span class="alert-dot"></span><span><b>长江电力</b> 今日除息，每 10 股派 8.2 元</span><span class="alert-time num">09:30</span></div>
+          </div>
+
+          <div class="card week-card">
+            <div class="alert-head"><span class="t-label">本周关注</span><span class="t-meta">观察池内 · 2 条</span></div>
+            <div class="week-row"><span class="week-date num">11-17</span><span>中国神华 · 三季报披露</span><span class="week-tag">财报</span></div>
+            <div class="week-row"><span class="week-date num">11-19</span><span>长江电力 · 解禁 0.4%</span><span class="week-tag">解禁</span></div>
+          </div>
+
+          <div class="review-nudge card">
+            <span><b>5 只</b>已跟踪 ≥ 30 天，该给结论了。</span>
+            <span class="rn-link">去复盘</span>
+            <svg class="ic ic-12"><use href="#i-arrow"/></svg>
+          </div>
+
+          <p class="footnote">“超额”为相对沪深300 的同期涨幅差，未计交易费用。</p>
+        </main>
+
+        <nav class="tabbar">
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-filter"/></svg></span><span class="tab-label">选股</span></div>
+          <div class="tab active"><span class="ico"><svg class="ic"><use href="#i-eye"/></svg></span><span class="tab-label">观察</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-book"/></svg></span><span class="tab-label">复盘</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-chart"/></svg></span><span class="tab-label">市场</span></div>
+        </nav>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 05 复盘 ================= -->
+  <section class="screen-set" data-screen="review">
+    <div class="screen-label"><span class="s-no">05</span><span class="s-name">复盘</span><span class="s-intent">决策账本：样本、超额、结论</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar">
+          <span class="sb-time">9:41</span>
+          <span class="sb-icons">
+            <svg viewBox="0 0 18 12" class="sb-ic"><path d="M1 9h2v2H1zM5 6.5h2V11H5zM9 4h2v7H9zM13 1.5h2V11h-2z" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 16 12" class="sb-ic"><path d="M1.5 4.2a10 10 0 0 1 13 0M4 6.8a6.4 6.4 0 0 1 8 0M6.5 9.2a2.9 2.9 0 0 1 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="10.6" r=".8" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 12" class="sb-ic"><rect x=".8" y=".8" width="20" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.2" fill="currentColor"/><path d="M22.6 4.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+
+        <header class="app-header">
+          <div class="brand-row"><span class="brand">拾股</span><span class="page-name">复盘</span></div>
+          <div class="sub">只读账本 · 看决策，不看盈亏</div>
+          <div class="hr"></div>
+        </header>
+
+        <main class="content">
+          <div class="review-summary">
+            <div class="rs-left">
+              <span class="t-label">近 60 日 · 有结论 11 只</span>
+              <div class="rs-main"><span class="num rs-big">7</span><span class="rs-den num">/ 11</span><span class="rs-unit">跑赢沪深300</span></div>
+            </div>
+            <div class="rs-right">
+              <span class="rs-k">中位超额</span>
+              <span class="num rs-v up">+2.4pp</span>
+              <span class="rs-k">样本 11 · 等权</span>
+            </div>
+          </div>
+
+          <div class="card chart-card">
+            <div class="chart-head">
+              <span class="t-label">观察池 vs 沪深300</span>
+              <div class="legend"><span class="lg"><i class="lg-line"></i>观察池 +6.8%</span><span class="lg"><i class="lg-dash"></i>沪深300 +2.2%</span></div>
+            </div>
+            <div id="review-chart"></div>
+            <div class="chart-foot"><span>09-01</span><span>10-08</span><span>11-13</span></div>
+          </div>
+
+          <div class="card dist-card">
+            <div class="dist-head"><span class="t-label">复盘结论</span><span class="t-meta">11 只有结论</span></div>
+            <div class="bar-row"><span class="br-label">看对</span><div class="br-track"><span class="br-fill" style="width:55%"></span></div><span class="br-val num">6</span></div>
+            <div class="bar-row"><span class="br-label">待定</span><div class="br-track"><span class="br-fill soft" style="width:18%"></span></div><span class="br-val num">2</span></div>
+            <div class="bar-row"><span class="br-label">看错</span><div class="br-track"><span class="br-fill soft" style="width:27%"></span></div><span class="br-val num">3</span></div>
+            <div class="dist-note">下次遇到同类条件，先看这 3 个反例。</div>
+          </div>
+
+          <div class="list-head">
+            <span class="t-label">复盘清单</span>
+            <span class="sort">按跟踪天数 ↓</span>
+          </div>
+
+          <div class="card review-list">
+            <div class="review-row">
+              <div class="rr-main">
+                <div class="sr-name">招商银行 <span class="sr-code num">600036</span></div>
+                <div class="rr-meta num">高股息 · 26 天 · +5.2% / 超额 +2.8pp</div>
+                <div class="rr-note">“当时的理由是股息和估值，不是短期涨幅。”</div>
+              </div>
+              <div class="stamp">看对</div>
+            </div>
+            <div class="review-row">
+              <div class="rr-main">
+                <div class="sr-name">中芯国际 <span class="sr-code num">688981</span></div>
+                <div class="rr-meta num">放量突破 · 9 天 · -4.0% / 超额 -2.2pp</div>
+                <div class="rr-note">“这次把突破当成确认，实际量能不够。”</div>
+              </div>
+              <div class="stamp stamp-ink">看错</div>
+            </div>
+          </div>
+
+          <div class="card todo-card">
+            <div class="alert-head"><span class="t-label">待复盘</span><span class="t-meta">3 只 · 超过 30 天</span></div>
+            <div class="todo-row"><span class="sr-name">长江电力 <span class="sr-code num">600900</span></span><span class="todo-days num">34 天</span><svg class="ic ic-12"><use href="#i-arrow"/></svg></div>
+            <div class="todo-row"><span class="sr-name">中国移动 <span class="sr-code num">600941</span></span><span class="todo-days num">31 天</span><svg class="ic ic-12"><use href="#i-arrow"/></svg></div>
+            <div class="todo-row"><span class="sr-name">海天味业 <span class="sr-code num">603288</span></span><span class="todo-days num">45 天</span><svg class="ic ic-12"><use href="#i-arrow"/></svg></div>
+          </div>
+
+          <p class="footnote">样本很小，只描述这段观察，不代表策略有效或未来收益。</p>
+        </main>
+
+        <nav class="tabbar">
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-filter"/></svg></span><span class="tab-label">选股</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-eye"/></svg></span><span class="tab-label">观察</span></div>
+          <div class="tab active"><span class="ico"><svg class="ic"><use href="#i-book"/></svg></span><span class="tab-label">复盘</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-chart"/></svg></span><span class="tab-label">市场</span></div>
+        </nav>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 06 市场 ================= -->
+  <section class="screen-set" data-screen="market">
+    <div class="screen-label"><span class="s-no">06</span><span class="s-name">市场</span><span class="s-intent">宽度、板块、日历与数据口径</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar">
+          <span class="sb-time">9:41</span>
+          <span class="sb-icons">
+            <svg viewBox="0 0 18 12" class="sb-ic"><path d="M1 9h2v2H1zM5 6.5h2V11H5zM9 4h2v7H9zM13 1.5h2V11h-2z" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 16 12" class="sb-ic"><path d="M1.5 4.2a10 10 0 0 1 13 0M4 6.8a6.4 6.4 0 0 1 8 0M6.5 9.2a2.9 2.9 0 0 1 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="10.6" r=".8" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 12" class="sb-ic"><rect x=".8" y=".8" width="20" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.2" fill="currentColor"/><path d="M22.6 4.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+
+        <header class="app-header">
+          <div class="brand-row"><span class="brand">拾股</span><span class="page-name">市场</span></div>
+          <div class="sub">今天发生了什么 · 不猜明天</div>
+          <div class="hr"></div>
+        </header>
+
+        <main class="content">
+          <div class="index-grid">
+            <div class="index-card card">
+              <span class="ix-name">上证指数</span>
+              <span class="ix-val num">3,412.68</span>
+              <span class="ix-chg up num">▲ +0.62%</span>
+            </div>
+            <div class="index-card card wob2">
+              <span class="ix-name">深证成指</span>
+              <span class="ix-val num">10,846.31</span>
+              <span class="ix-chg up num">▲ +0.81%</span>
+            </div>
+            <div class="index-card card">
+              <span class="ix-name">创业板指</span>
+              <span class="ix-val num">2,241.07</span>
+              <span class="ix-chg down num">▼ -0.34%</span>
+            </div>
+          </div>
+
+          <div class="card breadth-card">
+            <div class="bc-head"><span class="t-label">涨跌家数</span><span class="t-meta num">10:12</span></div>
+            <div class="breadth-nums">
+              <span class="bn up num"><b>2,861</b> 涨</span>
+              <span class="bn down num"><b>2,102</b> 跌</span>
+              <span class="bn flat num"><b>363</b> 平</span>
+            </div>
+            <div class="breadth-bar"><span class="bb-up" style="width:53.7%"></span><span class="bb-down" style="width:39.5%"></span><span class="bb-flat" style="width:6.8%"></span></div>
+            <div class="breadth-foot"><span>涨停 <b class="up num">48</b></span><span>跌停 <b class="down num">6</b></span><span>成交额 <b class="num">1.21 万亿</b></span></div>
+          </div>
+
+          <div class="card temp-card">
+            <div class="bc-head"><span class="t-label">市场温度</span><span class="t-meta">描述，不预测</span></div>
+            <div class="temp-main">
+              <span class="num temp-big">45.6%</span>
+              <span class="temp-desc">个股站上 20 日均线<br><b class="num">2,431 / 5,326</b></span>
+            </div>
+            <div class="range-marker">
+              <span class="rm-track"></span>
+              <span class="rm-band"></span>
+              <span class="rm-mid"></span>
+              <span class="rm-pointer" style="left:38%"></span>
+            </div>
+            <div class="temp-foot"><span>0%</span><span>近 3 年分位 <b class="num">38%</b></span><span>100%</span></div>
+          </div>
+
+          <div class="card mini-stat">
+            <div class="ms-item"><span class="ms-k">两融余额 · T-1</span><span class="ms-v num">1.92 万亿</span></div>
+            <div class="ms-sep"></div>
+            <div class="ms-item"><span class="ms-k">融资买入占比</span><span class="ms-v num">9.1%</span></div>
+            <div class="ms-sep"></div>
+            <div class="ms-item"><span class="ms-k">较前日</span><span class="ms-v up num">+0.3%</span></div>
+          </div>
+
+          <div class="card sector-card">
+            <div class="bc-head"><span class="t-label">板块 · 今日</span><span class="t-meta">申万一级 · 前 5 / 后 2</span></div>
+            <div class="sector-row"><span class="sc-name">银行</span><div class="sc-track"><span class="sc-zero"></span><span class="sc-bar up" style="left:50%;width:45.5%"></span></div><span class="sc-val up num">+1.82%</span></div>
+            <div class="sector-row"><span class="sc-name">煤炭</span><div class="sc-track"><span class="sc-zero"></span><span class="sc-bar up" style="left:50%;width:37.8%"></span></div><span class="sc-val up num">+1.51%</span></div>
+            <div class="sector-row"><span class="sc-name">电力</span><div class="sc-track"><span class="sc-zero"></span><span class="sc-bar up" style="left:50%;width:28%"></span></div><span class="sc-val up num">+1.12%</span></div>
+            <div class="sector-row"><span class="sc-name">半导体</span><div class="sc-track"><span class="sc-zero"></span><span class="sc-bar down" style="left:23.5%;width:26.5%"></span></div><span class="sc-val down num">-1.06%</span></div>
+            <div class="sector-row"><span class="sc-name">军工</span><div class="sc-track"><span class="sc-zero"></span><span class="sc-bar down" style="left:16.5%;width:33.5%"></span></div><span class="sc-val down num">-1.34%</span></div>
+            <div class="sector-note">板块涨跌是当日快照，不构成轮动建议。</div>
+          </div>
+
+          <div class="card cal-card">
+            <div class="bc-head"><span class="t-label">本周日历</span><span class="t-meta">11-16 — 11-20</span></div>
+            <div class="cal-row"><span class="cal-date num">11-17</span><span class="cal-dot"></span><span class="cal-text">财报披露 32 家</span><span class="cal-tag">财报</span></div>
+            <div class="cal-row"><span class="cal-date num">11-19</span><span class="cal-dot"></span><span class="cal-text">解禁市值 18.6 亿</span><span class="cal-tag">解禁</span></div>
+            <div class="cal-row"><span class="cal-date num">11-20</span><span class="cal-dot"></span><span class="cal-text">新股申购 2 只</span><span class="cal-tag">新股</span></div>
+          </div>
+
+          <div class="data-note">
+            <div class="dn-title">数据口径</div>
+            <p>行情延迟约 15 分钟，价格为最近成交价，不是可成交价。财务数据按最近一期报告，PE 为 TTM。所有内容仅作信息展示，不构成投资建议。</p>
+          </div>
+        </main>
+
+        <nav class="tabbar">
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-filter"/></svg></span><span class="tab-label">选股</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-eye"/></svg></span><span class="tab-label">观察</span></div>
+          <div class="tab"><span class="ico"><svg class="ic"><use href="#i-book"/></svg></span><span class="tab-label">复盘</span></div>
+          <div class="tab active"><span class="ico"><svg class="ic"><use href="#i-chart"/></svg></span><span class="tab-label">市场</span></div>
+        </nav>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= DESIGN TOKENS ================= -->
+<section class="tokens">
+  <div class="tokens-head">
+    <span class="kicker">DESIGN SYSTEM</span>
+    <h2>纸、墨，和一点点红绿</h2>
+    <p>所有控件保持中性；只有价格与涨跌使用饱和色。颜色不是装饰，是数据。</p>
+  </div>
+
+  <div class="token-grid">
+    <div class="token-block">
+      <div class="tb-title">Palette</div>
+      <div class="swatches">
+        <div class="swatch"><i style="background:#FBF8F2"></i><b>Paper</b><span>#FBF8F2</span></div>
+        <div class="swatch"><i style="background:#F1ECE2"></i><b>Canvas</b><span>#F1ECE2</span></div>
+        <div class="swatch"><i style="background:#23201C"></i><b>Ink</b><span>#23201C</span></div>
+        <div class="swatch"><i style="background:#6E675E"></i><b>Ink Soft</b><span>#6E675E</span></div>
+        <div class="swatch"><i style="background:#B9B0A3"></i><b>Hairline</b><span>#B9B0A3</span></div>
+        <div class="swatch"><i style="background:#EAE4D8"></i><b>Well</b><span>#EAE4D8</span></div>
+        <div class="swatch"><i style="background:#D8453A"></i><b>Up / 涨</b><span>#D8453A</span></div>
+        <div class="swatch"><i style="background:#2E7D5B"></i><b>Down / 跌</b><span>#2E7D5B</span></div>
+        <div class="swatch"><i style="background:#FFE9A8"></i><b>Highlighter</b><span>#FFE9A8</span></div>
+      </div>
+      <p class="token-note">红涨绿跌沿用 A 股习惯，并同时给出 ▲▼ 与正负号，色盲用户仍可读。高亮黄是“人加的标记”（标签 / 当前页 / 待办），不表示涨跌。</p>
+    </div>
+
+    <div class="token-block">
+      <div class="tb-title">Type · 单一字族，等宽数字</div>
+      <div class="type-spec"><span class="ts-name">Hero 46/46</span><span class="ts-demo ts-hero num">37</span></div>
+      <div class="type-spec"><span class="ts-name">Display 34/40</span><span class="ts-demo ts-display num">37</span></div>
+      <div class="type-spec"><span class="ts-name">Headline 24/30</span><span class="ts-demo ts-headline">筛选条件</span></div>
+      <div class="type-spec"><span class="ts-name">Title 19/25</span><span class="ts-demo ts-title">招商银行 600036</span></div>
+      <div class="type-spec"><span class="ts-name">Body 14/20</span><span class="ts-demo ts-body">条件命中只说明它符合筛选，不说明它便宜。</span></div>
+      <div class="type-spec"><span class="ts-name">Meta 11/16</span><span class="ts-demo ts-meta num">PE 6.9 · 股息 4.8% · 换手 0.38%</span></div>
+      <p class="token-note">数字统一 <span class="num">tabular-nums</span>，价格右对齐、两位小数；指数千分位。中文字重只用 Medium / SemiBold。</p>
+    </div>
+
+    <div class="token-block">
+      <div class="tb-title">Components</div>
+      <div class="demo-row">
+        <button class="btn demo-btn">加入观察</button>
+        <button class="btn ghost demo-btn">写判断</button>
+        <span class="mini-hl">高股息</span>
+        <span class="stamp demo-stamp">看对</span>
+      </div>
+      <div class="demo-row">
+        <span class="toggle on"></span><span class="toggle"></span>
+        <span class="checkbox on"><svg class="ic ic-12"><use href="#i-check"/></svg></span>
+        <span class="checkbox"></span>
+        <div class="slider demo-slider"><span class="slider-fill" style="width:44%"></span><span class="knob" style="left:44%"></span></div>
+      </div>
+      <div class="demo-row candle-legend">
+        <span class="cl-item"><i class="candle-up"></i>阳线 · 空心红</span>
+        <span class="cl-item"><i class="candle-down"></i>阴线 · 实心绿</span>
+        <span class="cl-item"><i class="cl-ma"></i>MA20 · 墨线</span>
+      </div>
+      <p class="token-note">手绘只作用于边框、下划线与章；文字永远清晰。卡片倾角 ±0.3°，章 -6°，不做弹跳。</p>
+    </div>
+
+    <div class="token-block">
+      <div class="tb-title">Motion</div>
+      <ul class="motion-list">
+        <li><b>弹簧</b> damping 0.86 / stiffness 900，过冲极小</li>
+        <li><b>快移</b> 170ms；内容换字 140ms 短模糊</li>
+        <li><b>切页</b> 1/8 屏宽横移 + 淡入淡出，方向跟随 tab 顺序</li>
+        <li><b>数字变化</b> 只做 blur + 轻微上移，不滚动、不跳动</li>
+        <li><b>禁止</b> bounce / glow / 粒子 / 控件渐变 / 无限循环动画</li>
+      </ul>
+      <p class="token-note">动效预算：一屏同时最多一个“主动作”。数据加载用骨架纸纹，不用 spinner。</p>
+    </div>
+  </div>
+
+  <div class="rules">
+    <div class="rule"><span class="r-no">A</span><b>先给口径，再给数字</b><p>“37 只”旁边永远有“全市场 5,326”“6 个条件”“10:12”。没有口径的数字不做主视觉。</p></div>
+    <div class="rule"><span class="r-no">B</span><b>风险与理由同屏</b><p>个股页先写“为什么命中”，紧接着写“先看风险”。不把风险藏进二级页。</p></div>
+    <div class="rule"><span class="r-no">C</span><b>不出现买卖动词</b><p>用“加入观察 / 写判断 / 复盘”，不用“买入 / 卖出 / 推荐 / 目标价”。</p></div>
+    <div class="rule"><span class="r-no">D</span><b>空态也说人话</b><p>“还没有观察标的。从一次筛选开始，或手动添加一只要跟踪的股票。”不卖萌、不催付费。</p></div>
+  </div>
+</section>
+
+<footer class="board-foot">
+  <span>拾股 · UI DESIGN v0.1</span>
+  <span>纸墨手绘 / 红涨绿跌 / 数字等宽 / 无渐变</span>
+  <span>所有行情与财务数据均为示意，不构成投资建议</span>
+</footer>
+
+<script src="mockups.js"></script>
+</body>
+</html>

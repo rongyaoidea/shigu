@@ -1,0 +1,152 @@
+package com.shigu.core
+
+object StrategyPresets {
+
+    val all: List<StrategyConfig> = listOf(
+        StrategyConfig(
+            id = "rsrs_trend",
+            name = "RSRS 右偏趋势",
+            subtitle = "RSRS 右偏 + LLT + 量能",
+            evidence = "光大证券 2017《基于阻力支撑相对强度(RSRS)的市场择时》；广发证券 LLT 低延迟趋势线。RSRS 把每日最高价对最低价做 18 日回归，取斜率的 60 日标准分，再用 R² 与斜率做右偏修正。",
+            caveat = "RSRS 原报告用于指数择时；本策略把右偏标准分做横截面移植，属于自用改造，不等同于原报告结论。趋势策略在箱体震荡里会被反复打脸。",
+            factors = listOf(
+                FactorWeight(FactorKey.RSRS_RIGHT, 0.45),
+                FactorWeight(FactorKey.LLT_GAP, 0.30),
+                FactorWeight(FactorKey.VOLUME_RATIO, 0.15),
+                FactorWeight(FactorKey.MA_TREND, 0.10),
+            ),
+            rebalanceDays = 10,
+            maxPositions = 10,
+            stopLossPct = 0.10,
+            maxHoldDays = 60,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+        StrategyConfig(
+            id = "team_coin",
+            name = "球队硬币",
+            subtitle = "波动率/换手率翻转后的反转",
+            evidence = "方正金工 2022《个股动量效应的识别及“球队硬币”因子构建》。用波动率与换手率变化判断一只股票更像“硬币”还是“球队”，把传统反转里混入的动量翻转过来；报告披露 Rank IC -9.67%、多空年化 39.69%（历史回测，非承诺）。",
+            caveat = "原报告为月频、全市场、含多空与交易成本前的结果；本实现用日频数据近似，未做行业/风格正交化，实际结果会明显弱于报告。",
+            factors = listOf(
+                FactorWeight(FactorKey.TEAM_COIN, 0.70),
+                FactorWeight(FactorKey.VOLUME_PRICE_DIV, 0.15),
+                FactorWeight(FactorKey.TURNOVER_STABILITY, 0.15),
+            ),
+            rebalanceDays = 20,
+            maxPositions = 20,
+            stopLossPct = 0.12,
+            maxHoldDays = 60,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+        StrategyConfig(
+            id = "volume_stability",
+            name = "量价稳定",
+            subtitle = "量价背离 + 成交额/换手稳定",
+            evidence = "华西证券 2025《细颗粒度量价系列之一：量价背离+交易稳定性》：分钟量价背离 Rank IC 4.66%、成交额波动 Rank IC 5.61%；国盛证券 2025 也把换手稳定性列为稳定量价 Alpha。",
+            caveat = "原报告用分钟数据；本实现用日频收益/成交量/成交额做代理，交易稳定性可能被低估，不能当作原报告的复现。",
+            factors = listOf(
+                FactorWeight(FactorKey.VOLUME_PRICE_DIV, 0.35),
+                FactorWeight(FactorKey.AMOUNT_STABILITY, 0.25),
+                FactorWeight(FactorKey.TURNOVER_STABILITY, 0.25),
+                FactorWeight(FactorKey.ATR20, 0.15),
+            ),
+            rebalanceDays = 20,
+            maxPositions = 20,
+            stopLossPct = 0.10,
+            maxHoldDays = 60,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+        StrategyConfig(
+            id = "low_risk",
+            name = "低特质波动·彩票回避",
+            subtitle = "特质波动 + MAX + 偏度 + 低 Beta",
+            evidence = "Journal of Asset Management 2021《The Volatility Effect in China》：低风险组合长期跑赢高波动组合，VOL 因子年化溢价约 9.1%；MAX/偏度是彩票型股票的经典代理。",
+            caveat = "低波/低特质波动在投机行情中会跑输；MAX、偏度、特质波动都是用日频收益近似，和分钟级报告不可直接比较。",
+            factors = listOf(
+                FactorWeight(FactorKey.IDIO_VOL, 0.35),
+                FactorWeight(FactorKey.VOL20, 0.25),
+                FactorWeight(FactorKey.MAX_RET20, 0.20),
+                FactorWeight(FactorKey.SKEW20, 0.10),
+                FactorWeight(FactorKey.BETA60, 0.10),
+            ),
+            rebalanceDays = 20,
+            maxPositions = 20,
+            stopLossPct = 0.12,
+            maxHoldDays = 80,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+        StrategyConfig(
+            id = "llt_trend",
+            name = "LLT 低延迟趋势",
+            subtitle = "LLT + 均线 + 回撤 + 20 日高",
+            evidence = "广发证券 2013《低延迟趋势线与交易性择时》、2017《基于多期限的选股策略》：用二阶低通滤波器构造 LLT，延迟低于同平滑度 MA；多期限 LLT 因子在中证500 对冲下年化 29.58%（2010-2017 报告口径）。",
+            caveat = "报告是 2017 年前的回测；LLT 在震荡市会频繁翻向，必须配合止损/持有期，不能外推收益。",
+            factors = listOf(
+                FactorWeight(FactorKey.LLT_GAP, 0.55),
+                FactorWeight(FactorKey.MA_TREND, 0.20),
+                FactorWeight(FactorKey.DRAWDOWN60, 0.15),
+                FactorWeight(FactorKey.HIGH20_GAP, 0.10),
+            ),
+            rebalanceDays = 10,
+            maxPositions = 10,
+            stopLossPct = 0.10,
+            maxHoldDays = 60,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+        StrategyConfig(
+            id = "multi_new",
+            name = "新因子复合",
+            subtitle = "RSRS + 球队硬币 + 量价 + 低特质波动",
+            evidence = "把四条不同来源的增量信息拼在一起：RSRS（光大）、球队硬币（方正）、量价背离/交易稳定（华西、国盛）、低特质波动（JAM）。目标是降低单因子失效时的回撤，而不是追求最高收益。",
+            caveat = "复合权重是自用设定，没有做样本外优化；因子之间可能相关，回测收益不代表未来。",
+            factors = listOf(
+                FactorWeight(FactorKey.RSRS_RIGHT, 0.25),
+                FactorWeight(FactorKey.TEAM_COIN, 0.25),
+                FactorWeight(FactorKey.VOLUME_PRICE_DIV, 0.20),
+                FactorWeight(FactorKey.TURNOVER_STABILITY, 0.15),
+                FactorWeight(FactorKey.IDIO_VOL, 0.15),
+            ),
+            rebalanceDays = 10,
+            maxPositions = 15,
+            stopLossPct = 0.10,
+            maxHoldDays = 60,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+    )
+
+    val screenerPresets: List<StrategyConfig> = listOf(
+        all.first { it.id == "rsrs_trend" }.copy(id = "screen_rsrs", name = "RSRS 强势", maxPositions = 20, builtin = true),
+        all.first { it.id == "team_coin" }.copy(id = "screen_team", name = "球队硬币", maxPositions = 20, builtin = true),
+        all.first { it.id == "volume_stability" }.copy(id = "screen_vol", name = "量价稳定", maxPositions = 20, builtin = true),
+        all.first { it.id == "low_risk" }.copy(id = "screen_low", name = "低波防御", maxPositions = 20, builtin = true),
+        all.first { it.id == "llt_trend" }.copy(id = "screen_llt", name = "LLT 趋势", maxPositions = 20, builtin = true),
+        StrategyConfig(
+            id = "screen_value",
+            name = "低估值",
+            subtitle = "PE/PB 当前截面",
+            evidence = "价值因子在 A 股长期有阶段性溢价；当前估值只用于筛选，不做历史回测。",
+            caveat = "PE/PB 是当前快照；历史估值数据未同步时，回测会出现前视偏差。",
+            factors = listOf(
+                FactorWeight(FactorKey.PE, 0.45),
+                FactorWeight(FactorKey.PB, 0.35),
+                FactorWeight(FactorKey.DRAWDOWN60, 0.20),
+            ),
+            filters = StrategyFilters(maxPe = 25.0, maxPb = 3.0, minAmount20 = 100_000_000.0),
+            rebalanceDays = 20,
+            maxPositions = 20,
+            lookbackDays = 500,
+            builtin = true,
+        ),
+    )
+
+    fun byId(id: String): StrategyConfig? =
+        (all + screenerPresets).firstOrNull { it.id == id }
+
+    val default: StrategyConfig = all.first()
+}
