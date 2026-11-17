@@ -129,6 +129,46 @@ class OptionApi(
         out.sortedBy { it.date }.takeLast(limit)
     }
 
+    /** 东方财富前复权日线，用于 5 年期权回测；腾讯接口只给约 641 条。 */
+    suspend fun fetchHistory(secid: String, code: String, limit: Int = 1600): List<DailyBar> = withContext(Dispatchers.IO) {
+        val url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=$secid&klt=101&fqt=1" +
+            "&lmt=$limit&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
+        val root = JSONObject(get(url, "https://quote.eastmoney.com/"))
+        val arr = root.optJSONObject("data")?.optJSONArray("klines") ?: JSONArray()
+        val out = ArrayList<DailyBar>(arr.length())
+        for (i in 0 until arr.length()) {
+            val p = arr.optString(i).split(",")
+            if (p.size < 11) continue
+            val open = p[1].toDoubleOrNull() ?: continue
+            val close = p[2].toDoubleOrNull() ?: continue
+            val high = p[3].toDoubleOrNull() ?: close
+            val low = p[4].toDoubleOrNull() ?: close
+            val hands = p[5].toDoubleOrNull() ?: 0.0
+            val amount = p[6].toDoubleOrNull() ?: 0.0
+            val pct = p[8].toDoubleOrNull() ?: 0.0
+            val turnover = p[10].toDoubleOrNull() ?: 0.0
+            out += DailyBar(
+                code = code,
+                date = p[0],
+                open = open,
+                close = close,
+                high = high,
+                low = low,
+                volume = hands * 100.0,
+                amount = amount,
+                pct = pct,
+                turnover = turnover,
+            )
+        }
+        out.sortedBy { it.date }
+    }
+
+    suspend fun fetchEtfHistory(underlying: String, limit: Int = 1600): List<DailyBar> =
+        fetchHistory("1.$underlying", underlying, limit)
+
+    suspend fun fetchIndexHistory(code: String = "000300", limit: Int = 1600): List<DailyBar> =
+        fetchHistory("1.$code", code, limit)
+
     private fun expiryFromName(name: String, today: LocalDate): String {
         val m = Regex("(\\d{1,2})月").find(name)?.groupValues?.get(1)?.toIntOrNull() ?: return ""
         var date = LocalDate.of(today.year, m, 1).with(TemporalAdjusters.dayOfWeekInMonth(4, DayOfWeek.WEDNESDAY))

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.shigu.ShiguApp
 import com.shigu.core.FactorKey
 import com.shigu.core.FactorWeight
+import com.shigu.core.OptionBacktestResult
 import com.shigu.core.OptionContract
 import com.shigu.core.OptionPaperView
 import com.shigu.core.OptionSelector
@@ -31,6 +32,10 @@ data class OptionUiState(
     val signal: OptionSignal? = null,
     val target: OptionContract? = null,
     val chainLoading: Boolean = false,
+    val backtestLoading: Boolean = false,
+    val backtestResults: List<OptionBacktestResult> = emptyList(),
+    val backtestDetail: OptionBacktestResult? = null,
+    val backtestIv: Double = 1.05,
     val message: String? = null,
     val lastSync: Long = 0L,
 ) {
@@ -87,7 +92,15 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setUnderlying(code: String) {
         if (_state.value.underlying == code) return
-        _state.update { it.copy(underlying = code, target = null, signal = null) }
+        _state.update {
+            it.copy(
+                underlying = code,
+                target = null,
+                signal = null,
+                backtestResults = emptyList(),
+                backtestDetail = null,
+            )
+        }
         viewModelScope.launch { loadLocal() }
     }
 
@@ -120,6 +133,54 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
     fun setLots(lots: Int) {
         _state.update { it.copy(lots = lots.coerceIn(1, 20)) }
         rebuildPreview()
+    }
+
+    fun runBacktest() {
+        val s = _state.value
+        if (s.backtestLoading) return
+        val target = s.underlying
+        val iv = s.backtestIv
+        _state.update {
+            it.copy(
+                backtestLoading = true,
+                message = "正在补 5 年日线并回测 ${s.presets.size} 个内置策略…",
+            )
+        }
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) {
+                repo.backtestAll(target, s.offset, iv)
+            }
+            if (_state.value.underlying != target || _state.value.backtestIv != iv) return@launch
+            if (r.isSuccess) {
+                val results = r.getOrThrow().sortedByDescending { it.stats.optionReturn }
+                val selected = results.firstOrNull { it.stats.presetId == s.preset.id } ?: results.firstOrNull()
+                _state.update {
+                    it.copy(
+                        backtestLoading = false,
+                        backtestResults = results,
+                        backtestDetail = selected,
+                        message = "回测完成：${target} · ${results.firstOrNull()?.stats?.startDate ?: ""} 起",
+                    )
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        backtestLoading = false,
+                        message = "回测失败：${r.exceptionOrNull()?.message ?: "没有足够日线"}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectBacktest(presetId: String) {
+        val detail = _state.value.backtestResults.firstOrNull { it.stats.presetId == presetId } ?: return
+        _state.update { it.copy(backtestDetail = detail) }
+    }
+
+    fun setBacktestIv(iv: Double) {
+        if (_state.value.backtestIv == iv) return
+        _state.update { it.copy(backtestIv = iv, backtestResults = emptyList(), backtestDetail = null) }
     }
 
     fun create() {

@@ -204,6 +204,44 @@ object FactorEngine {
         return 100.0 * gain / (gain + loss)
     }
 
+    private fun mfi(panel: Panel, si: Int, i: Int, n: Int = 14): Double? {
+        if (i - n < 0) return null
+        var positive = 0.0
+        var negative = 0.0
+        for (k in i - n + 1..i) {
+            val h = panel.high[si][k]
+            val l = panel.low[si][k]
+            val c = panel.close[si][k]
+            val ph = panel.high[si][k - 1]
+            val pl = panel.low[si][k - 1]
+            val pc = panel.close[si][k - 1]
+            val v = panel.volume[si][k]
+            if (h.isNaN() || l.isNaN() || c.isNaN() || ph.isNaN() || pl.isNaN() || pc.isNaN() || v.isNaN()) {
+                return null
+            }
+            val tp = (h + l + c) / 3.0
+            val prev = (ph + pl + pc) / 3.0
+            val flow = tp * v
+            if (tp > prev) positive += flow else if (tp < prev) negative += flow
+        }
+        if (positive + negative <= 1e-9) return 50.0
+        if (negative <= 1e-9) return 100.0
+        return 100.0 - 100.0 / (1.0 + positive / negative)
+    }
+
+    private fun bollZ(close: DoubleArray, i: Int, n: Int = 20): Double? {
+        val ma = avg(close, i, n) ?: return null
+        if (i - n + 1 < 0 || close[i].isNaN()) return null
+        var variance = 0.0
+        for (k in i - n + 1..i) {
+            val d = close[k] - ma
+            variance += d * d
+        }
+        val sd = sqrt(variance / (n - 1).coerceAtLeast(1))
+        if (sd <= 1e-9) return null
+        return (close[i] - ma) / sd
+    }
+
     private fun atr(panel: Panel, si: Int, i: Int, n: Int = 20): Double? {
         if (i - n < 0) return null
         val tr = ArrayList<Double>(n)
@@ -388,6 +426,7 @@ object FactorEngine {
             FactorKey.RSRS_SLOPE -> rsrs(panel, si, i)?.slope
             FactorKey.RSRS_R2 -> rsrs(panel, si, i)?.r2
             FactorKey.LLT_GAP -> lltGap(close, i)
+            FactorKey.RET1 -> ret(close, i, 1)
             FactorKey.RET5 -> ret(close, i, 5)
             FactorKey.RET20 -> ret(close, i, 20)
             FactorKey.RET60 -> ret(close, i, 60)
@@ -405,6 +444,9 @@ object FactorEngine {
                 if (ma60 == null || ma60 == 0.0) null else close[i] / ma60 - 1.0
             }
             FactorKey.RSI14 -> rsi(close, i, 14)
+            FactorKey.RSI21 -> rsi(close, i, 21)
+            FactorKey.MFI14 -> mfi(panel, si, i, 14)
+            FactorKey.BOLL_Z -> bollZ(close, i, 20)
             FactorKey.VOLUME_RATIO -> {
                 val v5 = avg(volume, i, 5)
                 val v20 = avg(volume, i, 20)

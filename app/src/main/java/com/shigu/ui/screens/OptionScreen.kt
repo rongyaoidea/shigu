@@ -29,12 +29,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shigu.core.FactorKey
 import com.shigu.core.FactorWeight
+import com.shigu.core.OptionBacktestResult
 import com.shigu.core.OptionDirection
 import com.shigu.core.OptionPaperView
 import com.shigu.core.OptionSignal
@@ -44,7 +46,9 @@ import com.shigu.core.OptionType
 import com.shigu.core.ScoringMode
 import com.shigu.core.formatPct
 import com.shigu.core.formatYi
+import com.shigu.ui.OptionUiState
 import com.shigu.ui.OptionViewModel
+import com.shigu.ui.components.EquityChart
 import com.shigu.ui.components.MetricCell
 import com.shigu.ui.components.MiniTag
 import com.shigu.ui.components.PaperPill
@@ -262,8 +266,11 @@ fun OptionScreen(vm: OptionViewModel = viewModel()) {
             }
         }
 
-        item { SectionLabel("期权纸面策略", trailing = "方向反转/到期自动卖出调仓") }
+        item {
+            OptionBacktestSection(state, vm)
+        }
 
+        item { SectionLabel("期权纸面策略", trailing = "方向反转/到期自动卖出调仓") }
         if (state.strategies.isEmpty()) {
             item {
                 SketchCard(contentPadding = 12.dp) {
@@ -303,6 +310,117 @@ fun OptionScreen(vm: OptionViewModel = viewModel()) {
                 vm.setCustomRules(factors.map { OptionSignalRule(it.key, it.weight) })
             },
         )
+    }
+}
+
+@Composable
+private fun OptionBacktestSection(state: OptionUiState, vm: OptionViewModel) {
+    SectionLabel("5 年历史回测", trailing = "理论 BS 定价")
+    SketchCard(contentPadding = 12.dp) {
+        Text(
+            "用 ${state.underlying} 日线生成方向，期权价格按 20 日历史波动率做 Black-Scholes 理论定价；不是历史盘口成交价。",
+            fontSize = 8.sp,
+            color = ShiguPalette.InkSoft,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("IV", fontSize = 8.5.sp, color = ShiguPalette.InkSoft)
+            PaperPill("1.05", state.backtestIv == 1.05, { vm.setBacktestIv(1.05) })
+            PaperPill("1.20 压力", state.backtestIv == 1.20, { vm.setBacktestIv(1.20) })
+            Spacer(Modifier.weight(1f))
+            Text("2021-11 起", fontSize = 8.sp, color = ShiguPalette.InkFaint)
+        }
+        Spacer(Modifier.height(6.dp))
+        if (state.backtestLoading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(4.dp),
+                color = ShiguPalette.Ink,
+                trackColor = ShiguPalette.Well,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text("正在补 5 年日线并回测…首次约需 10–30 秒。", fontSize = 8.5.sp, color = ShiguPalette.InkSoft)
+        } else if (state.backtestResults.isEmpty()) {
+            SketchButton("跑 ${state.underlying} 5 年期权回测", onClick = vm::runBacktest)
+        } else {
+            val first = state.backtestResults.first().stats
+            Text(
+                "${first.startDate} ~ ${first.endDate} · 基准：ETF ${formatPct(first.etfReturn)} / 沪深300 ${formatPct(first.csiReturn)}",
+                fontSize = 7.8.sp,
+                color = ShiguPalette.InkFaint,
+            )
+            Spacer(Modifier.height(4.dp))
+            state.backtestResults.forEach { result ->
+                BacktestRow(
+                    result = result,
+                    selected = state.backtestDetail?.stats?.presetId == result.stats.presetId,
+                    onClick = { vm.selectBacktest(result.stats.presetId) },
+                )
+            }
+            val detail = state.backtestDetail
+            if (detail != null) {
+                Spacer(Modifier.height(4.dp))
+                SketchDivider()
+                Spacer(Modifier.height(6.dp))
+                Text(detail.stats.presetName, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    MetricCell("期权收益", formatPct(detail.stats.optionReturn), Modifier.weight(1f))
+                    MetricCell("ETF", formatPct(detail.stats.etfReturn), Modifier.weight(1f))
+                    MetricCell("沪深300", formatPct(detail.stats.csiReturn), Modifier.weight(1f))
+                }
+                Row(Modifier.fillMaxWidth()) {
+                    MetricCell("最大回撤", formatPct(detail.stats.maxDrawdown), Modifier.weight(1f))
+                    MetricCell("夏普", "%.2f".format(detail.stats.sharpe), Modifier.weight(1f))
+                    MetricCell("交易 / 胜率", "${detail.stats.trades} / ${(detail.stats.winRate * 100).toInt()}%", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(4.dp))
+                EquityChart(detail.equity)
+                Text(
+                    "实线：期权纸面 · 虚线：ETF 买入持有。${detail.warning}",
+                    fontSize = 7.3.sp,
+                    color = ShiguPalette.InkFaint,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BacktestRow(result: OptionBacktestResult, selected: Boolean, onClick: () -> Unit) {
+    val s = result.stats
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) ShiguPalette.Well else Color.Transparent, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(s.presetName, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "${s.trades} 笔 · 胜率 ${(s.winRate * 100).toInt()}% · 回撤 ${formatPct(s.maxDrawdown)}",
+                fontSize = 7.3.sp,
+                color = ShiguPalette.InkFaint,
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                formatPct(s.optionReturn),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (s.optionReturn > 0) ShiguPalette.Up else if (s.optionReturn < 0) ShiguPalette.Down else ShiguPalette.InkSoft,
+            )
+            Text(
+                "超额ETF ${formatPct(s.excessEtf)}",
+                fontSize = 7.3.sp,
+                color = if (s.excessEtf > 0) ShiguPalette.Up else ShiguPalette.Down,
+            )
+        }
+        if (s.beatBoth) {
+            Spacer(Modifier.width(5.dp))
+            MiniTag("跑赢", ShiguPalette.Up)
+        }
     }
 }
 

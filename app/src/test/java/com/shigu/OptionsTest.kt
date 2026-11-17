@@ -77,7 +77,7 @@ class OptionsTest {
         underlying = "510050",
         presetId = "rsrs_llt",
         presetName = "RSRS + LLT",
-        rules = OptionSignalPresets.all.first().rules,
+        rules = OptionSignalPresets.byId("rsrs_llt")!!.rules,
         strikeOffset = 0,
         lots = 1,
         createdAt = 0L,
