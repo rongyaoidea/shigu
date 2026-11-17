@@ -41,5 +41,8 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:testDebugUnitTest --no-daemon
 
+      - name: Lint
+        run: ./gradlew :app:lintDebug --no-daemon
+
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --no-daemon
