@@ -611,8 +611,8 @@ private fun PaperDetailDialog(detail: PaperDetail, onClose: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(detail.config.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "模拟净值 · ${detail.equity.size} 个点 · ${detail.holdings.size} 只持仓",
-                                fontSize = 8.5.sp,
+                                "冻结账本 · ${detail.equity.size} 个点 · 截至 ${detail.equity.lastOrNull()?.date ?: "—"}",
+                                fontSize = 9.sp,
                                 color = ShiguPalette.InkSoft,
                             )
                         }

@@ -8,6 +8,7 @@ import com.shigu.core.CustomFactor
 import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
 import com.shigu.core.OptionContract
+import com.shigu.core.OptionBacktestResult
 import com.shigu.core.OptionPaperStrategy
 import com.shigu.core.OwnerType
 import com.shigu.core.StStatus
@@ -16,7 +17,7 @@ import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 6) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 7) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -107,6 +108,29 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX idx_paper_equity_strategy ON paper_equity(strategy_id, date)")
+        db.execSQL(
+            """
+            CREATE TABLE paper_ledger(
+                strategy_id TEXT NOT NULL, date TEXT NOT NULL,
+                equity REAL NOT NULL, benchmark REAL NOT NULL, cash REAL NOT NULL,
+                holdings_json TEXT NOT NULL, change_json TEXT, created_at INTEGER NOT NULL,
+                PRIMARY KEY(strategy_id, date)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE option_backtest_runs(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                underlying TEXT NOT NULL, strike_offset INTEGER NOT NULL,
+                iv_multiplier REAL NOT NULL, created_at INTEGER NOT NULL,
+                preset_id TEXT NOT NULL, preset_name TEXT NOT NULL,
+                start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+                stats_json TEXT NOT NULL, equity_json TEXT NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX idx_option_backtest_underlying ON option_backtest_runs(underlying, created_at)")
         db.execSQL(
             """
             CREATE TABLE stock_status_history(
@@ -294,6 +318,31 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 )
                 """.trimIndent(),
             )
+        }
+        if (oldVersion < 7) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS paper_ledger(
+                    strategy_id TEXT NOT NULL, date TEXT NOT NULL,
+                    equity REAL NOT NULL, benchmark REAL NOT NULL, cash REAL NOT NULL,
+                    holdings_json TEXT NOT NULL, change_json TEXT, created_at INTEGER NOT NULL,
+                    PRIMARY KEY(strategy_id, date)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS option_backtest_runs(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    underlying TEXT NOT NULL, strike_offset INTEGER NOT NULL,
+                    iv_multiplier REAL NOT NULL, created_at INTEGER NOT NULL,
+                    preset_id TEXT NOT NULL, preset_name TEXT NOT NULL,
+                    start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+                    stats_json TEXT NOT NULL, equity_json TEXT NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_option_backtest_underlying ON option_backtest_runs(underlying, created_at)")
         }
     }
 
@@ -780,6 +829,71 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         writableDatabase.delete("option_strategies", "id=?", arrayOf(id))
     }
 
+    // ---------------- 期权回测记录 ----------------
+
+    fun saveOptionBacktestRun(
+        underlying: String,
+        strikeOffset: Int,
+        ivMultiplier: Double,
+        createdAt: Long,
+        results: List<OptionBacktestResult>,
+    ) {
+        if (results.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("option_backtest_runs", "underlying=?", arrayOf(underlying))
+            val st = db.compileStatement(
+                "INSERT INTO option_backtest_runs(underlying,strike_offset,iv_multiplier,created_at,preset_id,preset_name,start_date,end_date,stats_json,equity_json) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            )
+            results.forEach { r ->
+                st.clearBindings()
+                st.bindString(1, underlying)
+                st.bindLong(2, strikeOffset.toLong())
+                st.bindDouble(3, ivMultiplier)
+                st.bindLong(4, createdAt)
+                st.bindString(5, r.stats.presetId)
+                st.bindString(6, r.stats.presetName)
+                st.bindString(7, r.stats.startDate)
+                st.bindString(8, r.stats.endDate)
+                st.bindString(9, OptionBacktestCodec.encodeStats(r.stats))
+                st.bindString(10, OptionBacktestCodec.encodeEquity(r.equity))
+                st.executeInsert()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getOptionBacktestRun(
+        underlying: String,
+        strikeOffset: Int,
+        ivMultiplier: Double,
+    ): Pair<Long, List<OptionBacktestResult>>? {
+        val runAt = readableDatabase.rawQuery(
+            "SELECT MAX(created_at) FROM option_backtest_runs WHERE underlying=? AND strike_offset=? AND iv_multiplier=?",
+            arrayOf(underlying, strikeOffset.toString(), ivMultiplier.toString()),
+        ).use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null } ?: return null
+        val out = ArrayList<OptionBacktestResult>()
+        readableDatabase.rawQuery(
+            "SELECT stats_json,equity_json FROM option_backtest_runs WHERE underlying=? AND strike_offset=? AND iv_multiplier=? AND created_at=? ORDER BY id",
+            arrayOf(underlying, strikeOffset.toString(), ivMultiplier.toString(), runAt.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                val stats = OptionBacktestCodec.decodeStats(c.getString(0)) ?: continue
+                out += OptionBacktestResult(
+                    stats = stats,
+                    equity = OptionBacktestCodec.decodeEquity(c.getString(1)),
+                    trades = emptyList(),
+                    warning = "来自本地回测记录；期权价格为 Black-Scholes 理论价。",
+                )
+            }
+        }
+        return if (out.isEmpty()) null else runAt to out
+    }
+
     // ---------------- 时点状态 ----------------
 
     /** 只记录发生变化的状态，避免每天 6k 行把库撑大。 */
@@ -1051,9 +1165,48 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
 
     fun insertPaperEquity(strategyId: String, date: String, equity: Double, benchmark: Double) {
         writableDatabase.execSQL(
-            "INSERT OR REPLACE INTO paper_equity(strategy_id,date,equity,benchmark) VALUES(?,?,?,?)",
+            "INSERT OR IGNORE INTO paper_equity(strategy_id,date,equity,benchmark) VALUES(?,?,?,?)",
             arrayOf<Any?>(strategyId, date, equity, benchmark),
         )
+    }
+
+    fun insertPaperLedger(
+        strategyId: String,
+        date: String,
+        equity: Double,
+        benchmark: Double,
+        cash: Double,
+        holdingsJson: String,
+        changeJson: String?,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        writableDatabase.execSQL(
+            "INSERT OR IGNORE INTO paper_ledger(strategy_id,date,equity,benchmark,cash,holdings_json,change_json,created_at) " +
+                "VALUES(?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>(strategyId, date, equity, benchmark, cash, holdingsJson, changeJson, now),
+        )
+    }
+
+    fun getPaperLedger(strategyId: String): List<com.shigu.core.PaperLedgerPoint> {
+        val out = ArrayList<com.shigu.core.PaperLedgerPoint>()
+        readableDatabase.rawQuery(
+            "SELECT date,equity,benchmark,cash,holdings_json,change_json,created_at FROM paper_ledger " +
+                "WHERE strategy_id=? ORDER BY date",
+            arrayOf(strategyId),
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += com.shigu.core.PaperLedgerPoint(
+                    date = c.getString(0),
+                    equity = c.getDouble(1),
+                    benchmark = c.getDouble(2),
+                    cash = c.getDouble(3),
+                    holdingsJson = c.getString(4),
+                    changeJson = if (c.isNull(5)) null else c.getString(5),
+                    createdAt = c.getLong(6),
+                )
+            }
+        }
+        return out
     }
 
     // ---------------- meta ----------------
@@ -1127,6 +1280,7 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
     fun deletePaperState(id: String) {
         writableDatabase.delete("paper_state", "strategy_id=?", arrayOf(id))
         writableDatabase.delete("paper_equity", "strategy_id=?", arrayOf(id))
+        writableDatabase.delete("paper_ledger", "strategy_id=?", arrayOf(id))
     }
 
     fun getPaperEquity(id: String): List<com.shigu.core.EquityPoint> {

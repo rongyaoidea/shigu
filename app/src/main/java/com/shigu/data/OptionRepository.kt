@@ -92,11 +92,20 @@ class OptionRepository(
             if (bench.size < 300) error("缺少沪深300基准，请先同步数据")
             val panel = buildBacktestPanel(underlying, bars, bench)
             val start = maxOf(OptionBacktestEngine.DEFAULT_START, bars.first().date)
-            OptionSignalPresets.all.map { preset ->
+            val results = OptionSignalPresets.all.map { preset ->
                 OptionBacktestEngine.run(panel, preset, underlying, strikeOffset, ivMultiplier, start)
             }
+            db.saveOptionBacktestRun(underlying, strikeOffset, ivMultiplier, System.currentTimeMillis(), results)
+            results
         }
     }
+
+    fun cachedBacktest(
+        underlying: String,
+        strikeOffset: Int,
+        ivMultiplier: Double,
+    ): List<OptionBacktestResult>? =
+        db.getOptionBacktestRun(underlying, strikeOffset, ivMultiplier)?.second
 
     private fun buildBacktestPanel(
         underlying: String,
@@ -127,6 +136,9 @@ class OptionRepository(
         if (stock != null && stock.price > 0) return stock.price
         return db.getBars(underlying, 1).lastOrNull()?.close ?: 0.0
     }
+
+    fun lastBarDate(underlying: String): String =
+        db.getBars(underlying, 1).lastOrNull()?.date ?: ""
 
     fun signal(underlying: String, preset: OptionSignalPreset): Result<OptionSignal> = runCatching {
         val stock = db.getStock(underlying) ?: error("本地没有 $underlying")

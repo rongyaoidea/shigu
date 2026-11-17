@@ -26,8 +26,8 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         // tag 发布：v0.2.0 → versionName 0.2.0，versionCode 200；单调递增，避免 run number 回退。
-        versionName = tagVersion ?: "0.7.0"
-        versionCode = versionCodeOf(tagVersion) ?: 700
+        versionName = tagVersion ?: "0.8.0"
+        versionCode = versionCodeOf(tagVersion) ?: 800
     }
 
     signingConfigs {

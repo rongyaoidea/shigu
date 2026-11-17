@@ -30,6 +30,19 @@ class PaperRepository(
             val r = runCatching { market.sinceCreation(config) }.getOrNull() ?: return@forEach
             since[config.id] = r
             val prev = db.getPaperState(config.id)
+            if (db.getPaperLedger(config.id).isEmpty() && prev != null && prev.lastTradeDate.isNotBlank()) {
+                // 迁移旧数据：把已保存的最后一天先冻结下来。
+                db.insertPaperLedger(
+                    strategyId = config.id,
+                    date = prev.lastTradeDate,
+                    equity = prev.equity,
+                    benchmark = prev.benchmark,
+                    cash = prev.cash,
+                    holdingsJson = prev.holdingsJson,
+                    changeJson = prev.lastChangeJson,
+                    now = prev.updatedAt,
+                )
+            }
             val prevHoldings = parseHoldings(prev?.holdingsJson)
             val current = r.portfolio?.holdings
             val newCodes = if (current != null) current.map { it.code }.toSet() else prevHoldings.map { it.code }.toSet()
@@ -37,7 +50,8 @@ class PaperRepository(
             val buys = (newCodes - prevCodes).map { code -> nameOf(code, current, prevHoldings) }
             val sells = (prevCodes - newCodes).map { code -> nameOf(code, current, prevHoldings) }
             val holds = newCodes.intersect(prevCodes).size
-            val newer = prev == null || r.endDate >= prev.lastTradeDate
+            // 严格大于：同一交易日已经冻结过，就不再用修正后的日线重写。
+            val newer = prev == null || r.endDate > prev.lastTradeDate
             val computed = StrategyChange(
                 strategyId = config.id,
                 strategyName = config.name,
@@ -74,6 +88,17 @@ class PaperRepository(
                 } else if (r.endDate.isNotBlank()) {
                     db.insertPaperEquity(config.id, r.endDate, equity, benchmark)
                 }
+                if (r.endDate.isNotBlank()) {
+                    db.insertPaperLedger(
+                        strategyId = config.id,
+                        date = r.endDate,
+                        equity = equity,
+                        benchmark = benchmark,
+                        cash = r.portfolio?.cash ?: 1_000_000.0,
+                        holdingsJson = encodeHoldings(current ?: emptyList()),
+                        changeJson = if (change.hasChange) encodeChange(change) else null,
+                    )
+                }
             }
         }
         SimulationRefresh(since, changes)
@@ -81,15 +106,27 @@ class PaperRepository(
 
     fun detail(config: StrategyConfig): PaperDetail {
         val st = db.getPaperState(config.id)
-        val holdings = parseHoldings(st?.holdingsJson)
+        val ledger = db.getPaperLedger(config.id)
+        val latest = ledger.lastOrNull()
+        val holdings = if (latest != null && latest.date >= (st?.lastTradeDate ?: "")) {
+            parseHoldings(latest.holdingsJson)
+        } else {
+            parseHoldings(st?.holdingsJson)
+        }
+        val equity = LinkedHashMap<String, com.shigu.core.EquityPoint>()
+        db.getPaperEquity(config.id).forEach { equity[it.date] = it }
+        ledger.forEach { equity[it.date] = com.shigu.core.EquityPoint(it.date, it.equity, it.benchmark) }
+        val mergedEquity = equity.values.sortedBy { it.date }
+        val currentEquity = latest?.equity ?: st?.equity ?: 1.0
+        val currentBenchmark = latest?.benchmark ?: st?.benchmark ?: 1.0
         return PaperDetail(
             config = config,
-            equity = db.getPaperEquity(config.id),
+            equity = mergedEquity,
             holdings = holdings,
-            cash = st?.cash ?: 1_000_000.0,
-            returnPct = (st?.equity ?: 1.0) - 1.0,
-            benchmarkPct = (st?.benchmark ?: 1.0) - 1.0,
-            change = parseChange(config, st?.lastChangeJson),
+            cash = latest?.cash ?: st?.cash ?: 1_000_000.0,
+            returnPct = currentEquity - 1.0,
+            benchmarkPct = currentBenchmark - 1.0,
+            change = parseChange(config, latest?.changeJson ?: st?.lastChangeJson),
             trades = parseTrades(st?.tradesJson),
         )
     }

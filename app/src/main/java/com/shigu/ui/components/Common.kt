@@ -82,7 +82,7 @@ fun MiniTag(text: String, color: Color = ShiguPalette.InkSoft) {
             .border(0.8.dp, color.copy(alpha = 0.45f), RoundedCornerShape(3.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp),
     ) {
-        Text(text, fontSize = 9.sp, color = color)
+        Text(text, fontSize = 9.5.sp, color = color)
     }
 }
 
@@ -115,8 +115,8 @@ fun MetricCell(
     valueColor: Color = ShiguPalette.Ink,
 ) {
     Column(modifier) {
-        Text(label, fontSize = 9.sp, color = ShiguPalette.InkSoft)
-        Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
+        Text(label, fontSize = 9.5.sp, color = ShiguPalette.InkSoft)
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
     }
 }
 

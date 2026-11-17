@@ -3,6 +3,8 @@ package com.shigu.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -148,7 +150,7 @@ fun ScreenerScreen(
 
         item {
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -156,7 +158,7 @@ fun ScreenerScreen(
                 listOf(300, 800, 1500).forEach { n ->
                     PaperPill("$n", state.screenPool == n, { onPool(n) })
                 }
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
                 SmallFilterButton(
                     label = "基础",
                     active = !currentFilters.isDefault,
@@ -1251,6 +1253,7 @@ private fun SmallFilterButton(
             Text(
                 label,
                 fontSize = 10.sp,
+                maxLines = 1,
                 color = if (filled) ShiguPalette.Paper else ShiguPalette.Ink,
             )
         }

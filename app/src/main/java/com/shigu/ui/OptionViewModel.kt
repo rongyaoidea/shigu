@@ -14,6 +14,7 @@ import com.shigu.core.OptionSignal
 import com.shigu.core.OptionSignalPreset
 import com.shigu.core.OptionSignalPresets
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -36,6 +37,7 @@ data class OptionUiState(
     val backtestResults: List<OptionBacktestResult> = emptyList(),
     val backtestDetail: OptionBacktestResult? = null,
     val backtestIv: Double = 1.05,
+    val lastBarDate: String = "",
     val message: String? = null,
     val lastSync: Long = 0L,
 ) {
@@ -49,6 +51,7 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(OptionUiState())
     val state: StateFlow<OptionUiState> = _state
+    private var previewJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -61,6 +64,7 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
         val current = _state.value
         val contracts = withContext(Dispatchers.IO) { repo.contracts(current.underlying) }
         val price = withContext(Dispatchers.IO) { repo.underlyingPrice(current.underlying) }
+        val lastBarDate = withContext(Dispatchers.IO) { repo.lastBarDate(current.underlying) }
         val strategies = withContext(Dispatchers.IO) {
             repo.strategies().map { repo.refresh(it) }
         }
@@ -68,11 +72,34 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 contracts = contracts,
                 underlyingPrice = price,
+                lastBarDate = lastBarDate,
                 strategies = strategies,
                 lastSync = contracts.maxOfOrNull { c -> c.updatedAt } ?: 0L,
             )
         }
         rebuildPreview()
+        if (_state.value.backtestResults.isEmpty()) loadCachedBacktest()
+    }
+
+    private fun loadCachedBacktest() {
+        val s = _state.value
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) {
+                repo.cachedBacktest(s.underlying, s.offset, s.backtestIv)
+            } ?: return@launch
+            if (_state.value.underlying != s.underlying || _state.value.offset != s.offset ||
+                _state.value.backtestIv != s.backtestIv || _state.value.backtestResults.isNotEmpty()
+            ) {
+                return@launch
+            }
+            val sorted = cached.sortedByDescending { it.stats.optionReturn }
+            _state.update {
+                it.copy(
+                    backtestResults = sorted,
+                    backtestDetail = sorted.firstOrNull { r -> r.stats.presetId == it.preset.id } ?: sorted.firstOrNull(),
+                )
+            }
+        }
     }
 
     fun syncChain() {
@@ -126,13 +153,16 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setOffset(offset: Int) {
-        _state.update { it.copy(offset = offset) }
-        rebuildPreview()
+        _state.update {
+            it.copy(offset = offset, backtestResults = emptyList(), backtestDetail = null)
+        }
+        rebuildTarget()
+        loadCachedBacktest()
     }
 
     fun setLots(lots: Int) {
         _state.update { it.copy(lots = lots.coerceIn(1, 20)) }
-        rebuildPreview()
+        rebuildTarget()
     }
 
     fun runBacktest() {
@@ -181,6 +211,7 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
     fun setBacktestIv(iv: Double) {
         if (_state.value.backtestIv == iv) return
         _state.update { it.copy(backtestIv = iv, backtestResults = emptyList(), backtestDetail = null) }
+        loadCachedBacktest()
     }
 
     fun create() {
@@ -214,23 +245,43 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(message = null) }
     }
 
+    private fun rebuildTarget() {
+        val s = _state.value
+        val sig = s.signal ?: return
+        val target = OptionSelector.target(
+            contracts = s.contracts,
+            underlying = s.underlying,
+            direction = sig.direction,
+            strikeOffset = s.offset,
+            underlyingPrice = s.underlyingPrice,
+            today = LocalDate.now().toString(),
+        )
+        _state.update { it.copy(target = target) }
+    }
+
     private fun rebuildPreview() {
         val s = _state.value
+        previewJob?.cancel()
         if (s.contracts.isEmpty()) {
             _state.update { it.copy(signal = null, target = null) }
             return
         }
-        val sig = repo.signal(s.underlying, s.preset).getOrNull()
-        val target = sig?.let {
-            OptionSelector.target(
-                contracts = s.contracts,
-                underlying = s.underlying,
-                direction = it.direction,
-                strikeOffset = s.offset,
-                underlyingPrice = s.underlyingPrice,
-                today = LocalDate.now().toString(),
-            )
+        previewJob = viewModelScope.launch {
+            val sig = withContext(Dispatchers.IO) {
+                repo.signal(s.underlying, s.preset).getOrNull()
+            }
+            if (_state.value.underlying != s.underlying || _state.value.preset.id != s.preset.id) return@launch
+            val target = sig?.let {
+                OptionSelector.target(
+                    contracts = s.contracts,
+                    underlying = s.underlying,
+                    direction = it.direction,
+                    strikeOffset = s.offset,
+                    underlyingPrice = s.underlyingPrice,
+                    today = LocalDate.now().toString(),
+                )
+            }
+            _state.update { it.copy(signal = sig, target = target) }
         }
-        _state.update { it.copy(signal = sig, target = target) }
     }
 }

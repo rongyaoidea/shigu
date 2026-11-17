@@ -280,6 +280,17 @@ data class PaperDetail(
     val trades: List<Trade> = emptyList(),
 )
 
+/** 纸面逐日冻结快照：同一日期只写入一次，后续数据修正不覆盖。 */
+data class PaperLedgerPoint(
+    val date: String,
+    val equity: Double,
+    val benchmark: Double,
+    val cash: Double,
+    val holdingsJson: String,
+    val changeJson: String?,
+    val createdAt: Long,
+)
+
 data class EquityPoint(val date: String, val strategy: Double, val benchmark: Double)
 
 data class Trade(
