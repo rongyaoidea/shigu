@@ -1,10 +1,10 @@
-# 实现状态（2026-11-17）
+# 实现状态（2026-11-18）
 
 > GitHub 仓库：https://github.com/rongyaoidea/shigu （public）
-> 最新发布：v0.7.0（GitHub Actions 用仓库 Secrets 中的 release keystore 签名）
-> https://github.com/rongyaoidea/shigu/releases/tag/v0.7.0
-> v0.4.0 增加筛选漏斗、组合层、策略对比、调仓预览与数据质量；v0.5.0 增加自定义因子公式、因子相关性、纸面“同步+核对”；v0.6.x 增加 510050/510300 ETF 期权方向模拟；v0.7.0 增加期权 5 年历史回测与 6 个回测优选策略。
-> v0.7.0 APK SHA-256：`85f5584e4d8721169073d4409b8d142dac934376f256b7e4c6bfc155782cde33`
+> 最新发布：v0.8.0（GitHub Actions 用仓库 Secrets 中的 release keystore 签名）
+> https://github.com/rongyaoidea/shigu/releases/tag/v0.8.0
+> v0.5.0 增加自定义因子公式、因子相关性、纸面“同步+核对”；v0.6.x 增加 510050/510300 ETF 期权方向模拟；v0.7.0 增加期权 5 年历史回测与 6 个回测优选策略；v0.8.0 增加纸面冻结账本、期权回测缓存与期权页可读性优化。
+> v0.8.0 APK SHA-256：`9c78dc428cb1f875fbbfd5b17585850d55d4118f3450f5b19e3d007a37e87db6`
 
 ## 已完成并验证
 
