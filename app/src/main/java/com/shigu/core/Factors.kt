@@ -131,6 +131,9 @@ data class ScoredStock(
     val score: Double,
     val values: Map<FactorKey, Double?>,
     val contributions: Map<FactorKey, Double> = emptyMap(),
+    val customValues: Map<String, Double?> = emptyMap(),
+    val customContributions: Map<String, Double> = emptyMap(),
+    val customNames: Map<String, String> = emptyMap(),
 )
 
 data class FunnelStep(
@@ -599,7 +602,7 @@ object FactorEngine {
 
     fun scoreAt(panel: Panel, i: Int, config: StrategyConfig): List<ScoredStock> {
         if (i < 0 || panel.stocks.isEmpty()) return emptyList()
-        val totalWeight = config.factors.sumOf { it.weight }
+        val totalWeight = config.factors.sumOf { it.weight } + config.customFactors.sumOf { it.weight }
         if (totalWeight <= 0.0) return emptyList()
 
         val count = panel.stocks.size
@@ -609,6 +612,12 @@ object FactorEngine {
                 CrossSectionalEngine.values(panel, i, fw.key) ?: DoubleArray(count) { Double.NaN }
             } else {
                 DoubleArray(count) { si -> value(panel, si, i, fw.key) ?: Double.NaN }
+            }
+        }
+        val customRaw = HashMap<String, DoubleArray>(config.customFactors.size)
+        config.customFactors.forEach { cw ->
+            customRaw[cw.factor.id] = DoubleArray(count) { si ->
+                CustomFactorEngine.value(panel, si, i, cw.factor) ?: Double.NaN
             }
         }
 
@@ -622,11 +631,38 @@ object FactorEngine {
                 if (sd > 1e-9) stats[key] = mean to sd
             }
         }
+        val customStats = HashMap<String, Pair<Double, Double>>()
+        customRaw.forEach { (key, arr) ->
+            val valid = arr.filter { !it.isNaN() }
+            if (valid.size >= 5) {
+                val mean = valid.average()
+                val variance = valid.sumOf { (it - mean) * (it - mean) } / (valid.size - 1).coerceAtLeast(1)
+                val sd = sqrt(variance)
+                if (sd > 1e-9) customStats[key] = mean to sd
+            }
+        }
 
         // 排名打分：每个因子在截面上转成 [-1, 1] 的百分位，降低极端值影响。
         val rankScores = if (config.scoring == ScoringMode.RANK) {
             val out = HashMap<FactorKey, DoubleArray>(raw.size)
             raw.forEach { (key, arr) ->
+                val valid = arr.withIndex().filter { !it.value.isNaN() }.sortedBy { it.value }
+                if (valid.size >= 5) {
+                    val ranked = DoubleArray(count) { Double.NaN }
+                    val denom = (valid.size - 1).coerceAtLeast(1)
+                    valid.forEachIndexed { rank, item ->
+                        ranked[item.index] = rank.toDouble() / denom * 2.0 - 1.0
+                    }
+                    out[key] = ranked
+                }
+            }
+            out
+        } else {
+            emptyMap()
+        }
+        val customRanks = if (config.scoring == ScoringMode.RANK) {
+            val out = HashMap<String, DoubleArray>(customRaw.size)
+            customRaw.forEach { (key, arr) ->
                 val valid = arr.withIndex().filter { !it.value.isNaN() }.sortedBy { it.value }
                 if (valid.size >= 5) {
                     val ranked = DoubleArray(count) { Double.NaN }
@@ -671,6 +707,29 @@ object FactorEngine {
                     usedWeight += fw.weight
                 }
             }
+            val customValues = LinkedHashMap<String, Double?>()
+            val customContrib = LinkedHashMap<String, Double>()
+            config.customFactors.forEach { cw ->
+                val v = customRaw[cw.factor.id]?.getOrNull(si)?.takeIf { !it.isNaN() }
+                customValues[cw.factor.id] = v
+                val direction = if (cw.factor.higherIsBetter) 1.0 else -1.0
+                val scoreValue = if (config.scoring == ScoringMode.RANK) {
+                    customRanks[cw.factor.id]?.getOrNull(si)?.takeIf { !it.isNaN() }
+                } else {
+                    val st = customStats[cw.factor.id]
+                    if (v != null && st != null) {
+                        ((v - st.first) / st.second).coerceIn(-2.5, 2.5)
+                    } else {
+                        null
+                    }
+                }
+                if (scoreValue != null) {
+                    val weighted = cw.weight * scoreValue * direction
+                    score += weighted
+                    customContrib[cw.factor.id] = weighted
+                    usedWeight += cw.weight
+                }
+            }
             if (usedWeight < totalWeight * 0.5) continue
             val denom = if (usedWeight > 0.0) usedWeight else 1.0
             result += ScoredStock(
@@ -678,6 +737,9 @@ object FactorEngine {
                 score = score / denom,
                 values = values,
                 contributions = rawContrib.mapValues { it.value / denom },
+                customValues = customValues,
+                customContributions = customContrib.mapValues { it.value / denom },
+                customNames = config.customFactors.associate { it.factor.id to it.factor.name },
             )
         }
         return result.sortedByDescending { it.score }
@@ -993,6 +1055,9 @@ object ScreenerEngine {
                 board = stock.board,
                 isSt = stock.isSt,
                 contributions = s.contributions,
+                customValues = s.customValues,
+                customContributions = s.customContributions,
+                customNames = s.customNames,
             )
         }
         val funnel = ScreenerFunnel.build(panel, config, scored.size) + FunnelStep(

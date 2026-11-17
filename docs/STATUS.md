@@ -21,6 +21,8 @@
 - 因子研究：
   - z-score / 排名两种打分；
   - 单因子体检：Rank IC、ICIR、正 IC 比例、Top-Bottom 十分位、覆盖率；
+  - 自定义因子公式：`+ - * / ^`、括号、abs/sqrt/log/min/max/clip；变量用 FactorKey.name 或 RSRS/ROE/PE/MKT_CAP 等别名；保存后按权重加入筛选/策略；
+  - 因子相关性：当前截面 Pearson 相关，列出高度重叠的因子对，|r|>0.7 标红；
   - 个股卡显示因子分数贡献；
   - 因子库搜索、分类、等权、权重归一化。
 - 基础过滤：企业性质（央企/地方国企/民企/外资/无实控人/未知）、ST/*ST/退市整理、停牌、上市天数、板块、价格/成交额、PE/PB 上限、市值区间、只看资料完整。
@@ -52,9 +54,11 @@
   - 点策略卡“详情 →”查看创建后收益、基准、现金、实际持仓；
   - 全量净值曲线（29/30 个点已落库）；
   - 最近 200 笔交易流水（含费用）；
-  - 顶部“立即核对 →”可手动触发一次纸面组合重算。
+  - 顶部“同步+核对 →”先补当天日线再重算；数据过期时卡片红字提示“待核对至 X”；
+  - 目标未成交时区分“今日信号·明早成交”与“开盘涨停/停牌/日线未同步”。
 - 数据安全：新列表 < 上次 98% 时停止清理；同步可取消；状态变化只在变化时写历史。
 - 备份：数据页可导出/导入自定义策略与观察池（剪贴板 JSON，不含行情/净值）。
+- 自定义因子：`custom_factors` 表（schema v5）+ 公式解析器；策略 JSON 内嵌公式定义，保证自包含。
 - 性能：Panel 按数据版本缓存，因子值/截面因子在 Panel 内缓存；同一批策略刷新复用面板。
 - 构建：`versionCode` 从语义化 tag 推导（v0.3.1 → 301），不再用 GitHub run number。
 - 因子页与策略页分离；因子页有“存为策略”；策略页有“去因子页组策略”。
@@ -66,6 +70,9 @@
 - `design/screens/app-basic-filter.png`：企业性质、ST/*ST、上市天数、停牌、板块、价格/流动性、PE/PB/市值过滤。
 - `design/screens/app-factor-picker-v2.png`：47 因子搜索、z-score/排名、等权、体检入口。
 - `design/screens/app-factor-stats.png`：Rank IC 0.040、ICIR 1.67、Top-Bottom +1.17%（RSRS，43 截面）。
+- `design/screens/app-custom-factor.png`：自定义公式编辑器（ROE / PE，变量面板）。
+- `design/screens/app-custom-factor-added.png`：自定义因子加入筛选，权重 20%。
+- `design/screens/app-factor-correlation.png`：因子相关性，日间×20日 0.99、换手稳×额稳 0.99、低波20×低波60 0.97。
 - `design/screens/app-data-profile.png`：基础资料 5,579 只、报告期 2026-09-30。
 - `design/screens/app-data-profile-v2.png`：6,469 资产、96.6K 日线、19.5MB。
 - `design/screens/app-backup.png`：导出策略/观察到剪贴板的备份卡。

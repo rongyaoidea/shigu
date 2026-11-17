@@ -78,6 +78,19 @@ class MarketRepository(private val db: ShiguDb) {
         FactorAnalytics.analyze(panel, key)
     }
 
+    suspend fun factorCorrelations(config: StrategyConfig): List<FactorAnalytics.CorrelationPair> =
+        withContext(Dispatchers.IO) {
+            val panel = loadPanel(
+                universeSize = 300,
+                lookbackDays = 260,
+                includeValuation = false,
+                fillCurrent = true,
+                maxStocks = 800,
+                boards = config.filters.boards,
+            )
+            FactorAnalytics.correlations(panel)
+        }
+
     suspend fun currentPicks(config: StrategyConfig): List<Pick> = withContext(Dispatchers.IO) {        val panel = loadPanel(
             universeSize = config.universeSize,
             lookbackDays = 260,
@@ -97,7 +110,7 @@ class MarketRepository(private val db: ShiguDb) {
             val price = panel.close[s.stockIndex][i].takeIf { !it.isNaN() } ?: stock.price
             val prev = if (i > 0) panel.close[s.stockIndex][i - 1] else Double.NaN
             val chg = if (!prev.isNaN() && prev > 0) (price / prev - 1.0) * 100.0 else stock.changePct
-            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt, s.contributions)
+            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt, s.contributions, s.customValues, s.customContributions, s.customNames)
         }
     }
 

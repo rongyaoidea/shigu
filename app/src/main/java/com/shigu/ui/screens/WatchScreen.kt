@@ -62,6 +62,7 @@ import com.shigu.ui.components.shortDate
 import com.shigu.ui.sketch.SketchCard
 import com.shigu.ui.sketch.SketchDivider
 import com.shigu.ui.theme.ShiguPalette
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 @Composable
@@ -78,6 +79,10 @@ fun WatchScreen(
     LaunchedEffect(Unit) {
         onWarm()
         onWarmSummaries()
+        while (true) {
+            delay(5 * 60_000)
+            onWarm()
+        }
     }
     val list = state.watchlist
     val changeMap = state.strategyChanges.associateBy { it.strategyId }
@@ -114,7 +119,7 @@ fun WatchScreen(
                             color = ShiguPalette.InkSoft,
                         )
                         Text(
-                            "立即核对 →",
+                            "同步+核对 →",
                             fontSize = 8.5.sp,
                             color = ShiguPalette.Ink,
                             modifier = Modifier.clickable(onClick = onForceRefresh),
@@ -196,6 +201,7 @@ fun WatchScreen(
                     since = state.since[config.id],
                     summary = state.summaries[config.id] ?: state.backtests[config.id],
                     change = changeMap[config.id],
+                    latestTradeDate = state.stats.lastTradeDate,
                     onOpenStock = onOpenStock,
                     onOpenPaper = { onOpenPaper(config) },
                 )
@@ -326,6 +332,7 @@ private fun StrategySimCard(
     since: SinceCreationResult?,
     summary: BacktestResult?,
     change: com.shigu.core.StrategyChange?,
+    latestTradeDate: String,
     onOpenStock: (String) -> Unit,
     onOpenPaper: () -> Unit,
 ) {
@@ -343,7 +350,7 @@ private fun StrategySimCard(
                     ) { Text("模拟中", fontSize = 8.sp) }
                 }
                 Text(
-                    "创建 ${shortDate(config.createdAt)} · ${config.factors.size} 因子 · 持仓 ${since?.portfolio?.holdings?.size ?: 0} 只",
+                    "创建 ${shortDate(config.createdAt)} · ${config.factors.size + config.customFactors.size} 因子 · 持仓 ${since?.portfolio?.holdings?.size ?: 0} 只 · 最后 ${since?.endDate ?: "—"}",
                     fontSize = 8.5.sp,
                     color = ShiguPalette.InkSoft,
                 )
@@ -410,6 +417,32 @@ private fun StrategySimCard(
                     color = ShiguPalette.InkFaint,
                 )
             }
+        }
+        if (since != null && latestTradeDate.isNotBlank() && since.endDate < latestTradeDate) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "待核对至 $latestTradeDate · 点上方“同步+核对”",
+                fontSize = 8.sp,
+                color = ShiguPalette.Alert,
+            )
+        } else if (since != null && since.picks.isNotEmpty() && since.portfolio?.holdings.isNullOrEmpty()) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                if (since.endDate == latestTradeDate) {
+                    "今日收盘信号已生成 · 按 T+1 规则明早开盘成交"
+                } else {
+                    "目标未成交：可能开盘涨停/停牌，或日线尚未同步；点“预览”看订单。"
+                },
+                fontSize = 8.sp,
+                color = ShiguPalette.InkFaint,
+            )
+        } else if (since != null && since.picks.isEmpty() && since.portfolio?.holdings.isNullOrEmpty()) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "尚无信号：首个成交在下一交易日开盘（T+1）；若今天日线未同步，点“同步+核对”。",
+                fontSize = 8.sp,
+                color = ShiguPalette.InkFaint,
+            )
         }
         if (change != null) {
             Spacer(Modifier.height(3.dp))
@@ -487,7 +520,7 @@ private fun RebalanceDialog(plan: RebalancePlan?, config: StrategyConfig, onClos
                     Text("关闭", fontSize = 10.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onClose))
                 }
                 Text(
-                    "按当前目标 TopK、等权、整手、收盘价估算；实际以调仓日开盘为准。",
+                    "按当前目标 TopK、等权、整手、收盘价估算；实际以调仓日开盘为准，开盘涨停不买、跌停不卖。",
                     fontSize = 8.5.sp,
                     color = ShiguPalette.InkSoft,
                     modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),

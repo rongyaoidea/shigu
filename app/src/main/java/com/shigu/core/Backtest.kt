@@ -310,7 +310,7 @@ object BacktestEngine {
             val price = panel.close[s.stockIndex][d].takeIf { !it.isNaN() } ?: return@mapNotNull null
             val prev = if (d > 0) panel.close[s.stockIndex][d - 1] else Double.NaN
             val chg = if (!prev.isNaN() && prev > 0) (price / prev - 1.0) * 100.0 else stock.changePct
-            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt, s.contributions)
+            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt, s.contributions, s.customValues, s.customContributions, s.customNames)
         }
 
     private fun picksFromPositions(panel: Panel, positions: Map<String, Position>, d: Int): List<Pick> =

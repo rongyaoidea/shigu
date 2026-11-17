@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.shigu.core.Board
+import com.shigu.core.CustomFactor
 import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
 import com.shigu.core.OwnerType
@@ -13,7 +14,7 @@ import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 4) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -132,6 +133,15 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             )
             """.trimIndent(),
         )
+        db.execSQL(
+            """
+            CREATE TABLE custom_factors(
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, expression TEXT NOT NULL,
+                higher_is_better INTEGER NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -224,6 +234,17 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                     roe REAL, gross_margin REAL, net_margin REAL, revenue_growth REAL, profit_growth REAL,
                     debt_ratio REAL, eps REAL, bps REAL, ocfps REAL,
                     PRIMARY KEY(code, report_date)
+                )
+                """.trimIndent(),
+            )
+        }
+        if (oldVersion < 5) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS custom_factors(
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL, expression TEXT NOT NULL,
+                    higher_is_better INTEGER NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0
                 )
                 """.trimIndent(),
             )
@@ -576,6 +597,47 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
     fun countValuations(): Long = scalar("SELECT COUNT(*) FROM valuation")
 
     fun countProfiles(): Long = scalar("SELECT COUNT(*) FROM stocks WHERE profile_updated_at > 0")
+
+    // ---------------- 自定义因子 ----------------
+
+    fun getCustomFactors(): List<CustomFactor> {
+        val out = ArrayList<CustomFactor>()
+        readableDatabase.rawQuery(
+            "SELECT id,name,expression,higher_is_better,unit,description FROM custom_factors ORDER BY created_at DESC",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += CustomFactor(
+                    id = c.getString(0),
+                    name = c.getString(1),
+                    expression = c.getString(2),
+                    higherIsBetter = c.getInt(3) == 1,
+                    unit = c.getString(4),
+                    description = c.getString(5),
+                )
+            }
+        }
+        return out
+    }
+
+    fun upsertCustomFactor(factor: CustomFactor, now: Long = System.currentTimeMillis()) {
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO custom_factors(id,name,expression,higher_is_better,unit,description,created_at) VALUES(?,?,?,?,?,?,?)",
+            arrayOf<Any?>(
+                factor.id,
+                factor.name,
+                factor.expression,
+                if (factor.higherIsBetter) 1 else 0,
+                factor.unit,
+                factor.description,
+                now,
+            ),
+        )
+    }
+
+    fun deleteCustomFactor(id: String) {
+        writableDatabase.delete("custom_factors", "id=?", arrayOf(id))
+    }
 
     // ---------------- 时点状态 ----------------
 

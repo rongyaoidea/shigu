@@ -39,6 +39,20 @@ object JsonCodec {
             fs.put(JSONObject().put("key", it.key.name).put("weight", it.weight))
         }
         o.put("factors", fs)
+        val cf = JSONArray()
+        c.customFactors.forEach { cw ->
+            cf.put(
+                JSONObject()
+                    .put("id", cw.factor.id)
+                    .put("name", cw.factor.name)
+                    .put("expression", cw.factor.expression)
+                    .put("higherIsBetter", cw.factor.higherIsBetter)
+                    .put("unit", cw.factor.unit)
+                    .put("description", cw.factor.description)
+                    .put("weight", cw.weight),
+            )
+        }
+        o.put("customFactors", cf)
         val f = JSONObject()
         f.put("minPrice", c.filters.minPrice)
         f.put("minAmount20", c.filters.minAmount20)
@@ -65,6 +79,26 @@ object JsonCodec {
             val x = fa.getJSONObject(i)
             val key = FactorKey.valueOf(x.getString("key"))
             factors += FactorWeight(key, x.optDouble("weight", 0.2))
+        }
+        val customFactors = ArrayList<com.shigu.core.CustomFactorWeight>()
+        val cfa = o.optJSONArray("customFactors") ?: JSONArray()
+        for (i in 0 until cfa.length()) {
+            val x = cfa.optJSONObject(i) ?: continue
+            val id = x.optString("id")
+            val name = x.optString("name")
+            val expression = x.optString("expression")
+            if (id.isBlank() || name.isBlank() || expression.isBlank()) continue
+            customFactors += com.shigu.core.CustomFactorWeight(
+                factor = com.shigu.core.CustomFactor(
+                    id = id,
+                    name = name,
+                    expression = expression,
+                    higherIsBetter = x.optBoolean("higherIsBetter", true),
+                    unit = x.optString("unit", ""),
+                    description = x.optString("description", ""),
+                ),
+                weight = x.optDouble("weight", 0.2),
+            )
         }
         val f = o.optJSONObject("filters") ?: JSONObject()
         val boards = HashSet<Board>()
@@ -95,6 +129,7 @@ object JsonCodec {
             evidence = o.optString("evidence", ""),
             caveat = o.optString("caveat", ""),
             factors = factors,
+            customFactors = customFactors,
             filters = StrategyFilters(
                 minPrice = f.optDouble("minPrice", 2.0),
                 minAmount20 = f.optDouble("minAmount20", 50_000_000.0),

@@ -8,6 +8,60 @@ import kotlin.math.sqrt
  */
 object FactorAnalytics {
 
+    data class CorrelationPair(
+        val a: FactorKey,
+        val b: FactorKey,
+        val corr: Double,
+        val samples: Int,
+    )
+
+    fun correlations(
+        panel: Panel,
+        keys: List<FactorKey> = FactorKey.entries,
+        minSamples: Int = 30,
+    ): List<CorrelationPair> {
+        val i = panel.lastIndex
+        if (i < 0) return emptyList()
+        val arrays = keys.associateWith { key ->
+            DoubleArray(panel.stocks.size) { si ->
+                FactorEngine.valueAt(panel, si, i, key) ?: Double.NaN
+            }
+        }
+        val out = ArrayList<CorrelationPair>()
+        for (a in keys.indices) {
+            for (b in a + 1 until keys.size) {
+                val ka = keys[a]
+                val kb = keys[b]
+                val xa = arrays[ka] ?: continue
+                val xb = arrays[kb] ?: continue
+                var n = 0
+                var sx = 0.0
+                var sy = 0.0
+                var sxx = 0.0
+                var syy = 0.0
+                var sxy = 0.0
+                for (k in xa.indices) {
+                    val x = xa[k]
+                    val y = xb[k]
+                    if (x.isNaN() || y.isNaN()) continue
+                    n++
+                    sx += x
+                    sy += y
+                    sxx += x * x
+                    syy += y * y
+                    sxy += x * y
+                }
+                if (n < minSamples) continue
+                val cov = sxy - sx * sy / n
+                val vx = sxx - sx * sx / n
+                val vy = syy - sy * sy / n
+                if (vx <= 1e-12 || vy <= 1e-12) continue
+                out += CorrelationPair(ka, kb, cov / sqrt(vx * vy), n)
+            }
+        }
+        return out.sortedByDescending { kotlin.math.abs(it.corr) }
+    }
+
     fun analyze(
         panel: Panel,
         key: FactorKey,

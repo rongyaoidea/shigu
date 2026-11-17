@@ -5,8 +5,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.shigu.ShiguApp
 import com.shigu.core.BacktestResult
+import com.shigu.core.CustomFactor
+import com.shigu.core.CustomFactorEngine
+import com.shigu.core.CustomFactorWeight
 import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
+import com.shigu.core.FactorAnalytics
 import com.shigu.core.FactorEngine
 import com.shigu.core.FactorKey
 import com.shigu.core.FactorStats
@@ -51,6 +55,9 @@ data class UiState(
     val factorStats: FactorStats? = null,
     val factorStatsLoading: Boolean = false,
     val factorStatsKey: FactorKey? = null,
+    val customFactors: List<CustomFactor> = emptyList(),
+    val factorCorrelations: List<FactorAnalytics.CorrelationPair>? = null,
+    val factorCorrelationsLoading: Boolean = false,
     val strategies: List<StrategyConfig> = emptyList(),
     val selectedStrategyId: String? = null,
     val autoUpdate: Boolean = true,
@@ -111,6 +118,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val stats = withContext(Dispatchers.IO) { db.stats() }
         val watch = withContext(Dispatchers.IO) { db.getWatchlist() }
         val strategies = withContext(Dispatchers.IO) { repo.list() }
+        val customFactors = withContext(Dispatchers.IO) { db.getCustomFactors() }
         val selected = _state.value.selectedStrategyId
             ?: strategies.firstOrNull()?.id
         _state.update {
@@ -122,6 +130,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 autoUpdate = settings.autoUpdate,
                 dailyUniverse = settings.dailyUniverse,
                 screenPool = if (it.screenPool <= 0) settings.backtestUniverse.limit else it.screenPool,
+                customFactors = customFactors,
             )
         }
         if (stats.stockCount > 0 && _state.value.screenResult == null) runScreen()
@@ -137,6 +146,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun fullSync() = startSync(SyncMode.FULL, Universe.ALL)
     fun valuationSync() = startValuationSync(Universe.TOP_800)
     fun cancelSync() = syncManager.cancel()
+
+    /** 立即核对：先补今天的日线，再重算纸面组合；否则只重算本地旧数据，看起来像“没成交”。 */
+    fun refreshPaperNow() {
+        if (_state.value.sync.running) return
+        viewModelScope.launch {
+            val current = _state.value
+            val universe = if (current.strategies.any { it.universeSize > 800 }) {
+                Universe.TOP_1500
+            } else {
+                settings.dailyUniverse
+            }
+            val r = syncManager.sync(SyncMode.DAILY, universe)
+            if (r.isSuccess) {
+                refreshSimulations(force = true)
+                refreshLocal()
+                _state.update { it.copy(message = "已同步日线并核对纸面持仓") }
+            } else {
+                _state.update { it.copy(message = "核对失败：${r.exceptionOrNull()?.message ?: "同步失败"}") }
+            }
+        }
+    }
 
     fun exportBackup(): String = backup.exportJson()
 
@@ -249,6 +279,66 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         runScreen()
     }
 
+    /** 返回 null 表示保存成功，否则返回错误文案。 */
+    fun saveCustomFactor(factor: CustomFactor): String? {
+        if (factor.name.isBlank()) return "给公式起个名字"
+        if (factor.expression.isBlank()) return "公式不能为空"
+        val err = CustomFactorEngine.validate(factor.expression)
+        if (err != null) return err
+        db.upsertCustomFactor(factor)
+        _state.update { it.copy(customFactors = db.getCustomFactors()) }
+        return null
+    }
+
+    fun deleteCustomFactor(id: String) {
+        db.deleteCustomFactor(id)
+        val cfg = _state.value.screenConfig.copy(
+            customFactors = _state.value.screenConfig.customFactors.filterNot { it.factor.id == id },
+        )
+        _state.update {
+            it.copy(
+                customFactors = db.getCustomFactors(),
+                screenConfig = cfg,
+                message = "已删除自定义因子",
+            )
+        }
+        runScreen()
+    }
+
+    fun addCustomFactorToScreen(factor: CustomFactor) {
+        val current = _state.value.screenConfig
+        if (current.customFactors.any { it.factor.id == factor.id }) {
+            _state.update { it.copy(message = "该因子已在当前筛选中") }
+            return
+        }
+        val cfg = current.copy(
+            id = "custom_screen",
+            name = "自定义筛选",
+            subtitle = "用户自选因子",
+            customFactors = current.customFactors + CustomFactorWeight(factor, 0.2),
+        )
+        _state.update { it.copy(screenConfig = cfg) }
+        runScreen()
+    }
+
+    fun removeCustomFactorFromScreen(id: String) {
+        val current = _state.value.screenConfig
+        val cfg = current.copy(customFactors = current.customFactors.filterNot { it.factor.id == id })
+        _state.update { it.copy(screenConfig = cfg) }
+        runScreen()
+    }
+
+    fun setCustomFactorWeight(id: String, weight: Double) {
+        val current = _state.value.screenConfig
+        val cfg = current.copy(
+            customFactors = current.customFactors.map {
+                if (it.factor.id == id) it.copy(weight = weight.coerceIn(0.01, 1.0)) else it
+            },
+        )
+        _state.update { it.copy(screenConfig = cfg) }
+        runScreen()
+    }
+
     fun analyzeFactor(key: FactorKey) {
         if (_state.value.factorStatsLoading) return
         _state.update { it.copy(factorStatsLoading = true, factorStatsKey = key, factorStats = null) }
@@ -266,6 +356,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearFactorStats() {
         _state.update { it.copy(factorStats = null, factorStatsKey = null, factorStatsLoading = false) }
+    }
+
+    fun analyzeCorrelations() {
+        if (_state.value.factorCorrelationsLoading) return
+        _state.update { it.copy(factorCorrelationsLoading = true, factorCorrelations = null) }
+        viewModelScope.launch {
+            val r = runCatching { market.factorCorrelations(_state.value.screenConfig) }
+            _state.update {
+                it.copy(
+                    factorCorrelationsLoading = false,
+                    factorCorrelations = r.getOrNull(),
+                    message = r.exceptionOrNull()?.message ?: it.message,
+                )
+            }
+        }
+    }
+
+    fun clearCorrelations() {
+        _state.update { it.copy(factorCorrelations = null, factorCorrelationsLoading = false) }
     }
 
     fun runScreen() {

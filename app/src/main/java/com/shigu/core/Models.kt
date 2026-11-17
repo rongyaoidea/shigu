@@ -192,6 +192,7 @@ data class StrategyConfig(
     val evidence: String,
     val caveat: String,
     val factors: List<FactorWeight>,
+    val customFactors: List<CustomFactorWeight> = emptyList(),
     val filters: StrategyFilters = StrategyFilters(),
     val rebalanceDays: Int = 20,
     val maxPositions: Int = 10,
@@ -209,7 +210,9 @@ data class StrategyConfig(
     val createdAt: Long = 0L,
 ) {
     val factorsLabel: String
-        get() = factors.joinToString(" · ") { "${it.key.shortLabel} ${(it.weight * 100).toInt()}%" }
+        get() = (factors.map { "${it.key.shortLabel} ${(it.weight * 100).toInt()}%" } +
+            customFactors.map { "${it.factor.name} ${(it.weight * 100).toInt()}%" })
+            .joinToString(" · ")
 }
 
 data class Pick(
@@ -222,6 +225,9 @@ data class Pick(
     val board: Board,
     val isSt: Boolean,
     val contributions: Map<FactorKey, Double> = emptyMap(),
+    val customValues: Map<String, Double?> = emptyMap(),
+    val customContributions: Map<String, Double> = emptyMap(),
+    val customNames: Map<String, String> = emptyMap(),
 )
 
 data class Holding(

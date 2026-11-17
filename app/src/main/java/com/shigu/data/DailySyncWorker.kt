@@ -24,9 +24,15 @@ class DailySyncWorker(
         val app = applicationContext as? ShiguApp ?: return Result.failure()
         if (!app.settings.autoUpdate) return Result.success()
         app.strategies.ensureBuiltins()
-        val result = app.syncManager.sync(SyncMode.DAILY, app.settings.dailyUniverse)
+        val strategies = app.strategies.list()
+        val universe = if (strategies.any { it.universeSize > 800 }) {
+            com.shigu.core.Universe.TOP_1500
+        } else {
+            app.settings.dailyUniverse
+        }
+        val result = app.syncManager.sync(SyncMode.DAILY, universe)
         if (result.isSuccess) {
-            val refresh = app.paper.refreshAll(app.strategies.list())
+            val refresh = app.paper.refreshAll(strategies)
             PaperNotifier.notify(app, refresh.changes)
         }
         return if (result.isSuccess) Result.success() else Result.retry()

@@ -53,8 +53,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.shigu.core.Board
+import com.shigu.core.CustomFactor
+import com.shigu.core.CustomFactorWeight
 import com.shigu.core.FactorKey
+import com.shigu.core.FactorAnalytics
 import com.shigu.core.FactorStats
+import com.shigu.core.FactorVariables
 import com.shigu.core.FactorWeight
 import com.shigu.core.FunnelStep
 import com.shigu.core.OwnerType
@@ -83,6 +87,7 @@ import com.shigu.ui.theme.ShiguPalette
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 @Composable
 fun ScreenerScreen(
@@ -95,6 +100,13 @@ fun ScreenerScreen(
     onApplyFilters: (StrategyFilters) -> Unit,
     onAnalyzeFactor: (FactorKey) -> Unit,
     onCloseFactorStats: () -> Unit,
+    onAnalyzeCorrelations: () -> Unit,
+    onCloseCorrelations: () -> Unit,
+    onSaveCustomFactor: (CustomFactor) -> String?,
+    onDeleteCustomFactor: (String) -> Unit,
+    onAddCustomFactor: (CustomFactor) -> Unit,
+    onRemoveCustomFactor: (String) -> Unit,
+    onCustomFactorWeight: (String, Double) -> Unit,
     onSaveStrategy: (StrategyConfig, String) -> Unit,
     onRun: () -> Unit,
     onQuickSync: () -> Unit,
@@ -102,6 +114,7 @@ fun ScreenerScreen(
     var showFactor by remember { mutableStateOf(false) }
     var showBasic by remember { mutableStateOf(false) }
     var showFunnel by remember { mutableStateOf(false) }
+    var showCustom by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     var strategyName by remember { mutableStateOf("") }
     val boards = state.screenConfig.filters.boards
@@ -149,6 +162,11 @@ fun ScreenerScreen(
                     active = !currentFilters.isDefault,
                     filled = false,
                 ) { showBasic = true }
+                SmallFilterButton(
+                    label = "自定义",
+                    active = state.screenConfig.customFactors.isNotEmpty(),
+                    filled = false,
+                ) { showCustom = true }
                 SmallFilterButton(
                     label = "因子",
                     active = true,
@@ -288,6 +306,10 @@ fun ScreenerScreen(
             analyticsKey = state.factorStatsKey,
             onAnalyze = onAnalyzeFactor,
             onCloseAnalytics = onCloseFactorStats,
+            correlations = state.factorCorrelations,
+            correlationsLoading = state.factorCorrelationsLoading,
+            onCorrelations = onAnalyzeCorrelations,
+            onCloseCorrelations = onCloseCorrelations,
             onDismiss = {
                 showFactor = false
                 onCloseFactorStats()
@@ -315,6 +337,19 @@ fun ScreenerScreen(
         FunnelDialog(
             steps = state.screenResult?.funnel.orEmpty(),
             onDismiss = { showFunnel = false },
+        )
+    }
+
+    if (showCustom) {
+        CustomFactorDialog(
+            library = state.customFactors,
+            selected = state.screenConfig.customFactors,
+            onSave = onSaveCustomFactor,
+            onDelete = onDeleteCustomFactor,
+            onAdd = onAddCustomFactor,
+            onRemove = onRemoveCustomFactor,
+            onWeight = onCustomFactorWeight,
+            onDismiss = { showCustom = false },
         )
     }
 
@@ -459,6 +494,32 @@ private fun PickCard(pick: Pick, onClick: () -> Unit) {
                             }
                     }
                 }
+                if (pick.customValues.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        pick.customValues.entries.take(2).forEach { (id, v) ->
+                            val name = pick.customNames[id] ?: "自定义"
+                            Text(
+                                "$name ${v?.let { "%.2f".format(it) } ?: "—"}",
+                                fontSize = 8.sp,
+                                color = ShiguPalette.InkSoft,
+                            )
+                        }
+                    }
+                }
+                if (pick.customContributions.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        pick.customContributions.entries
+                            .sortedByDescending { kotlin.math.abs(it.value) }
+                            .take(2)
+                            .forEach { (id, v) ->
+                                Text(
+                                    "${pick.customNames[id] ?: "自定义"} ${if (v >= 0) "+" else ""}%.2f".format(v),
+                                    fontSize = 8.sp,
+                                    color = if (v >= 0) ShiguPalette.Up else ShiguPalette.Down,
+                                )
+                            }
+                    }
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
@@ -489,6 +550,10 @@ fun FactorPickerDialog(
     analyticsKey: FactorKey?,
     onAnalyze: ((FactorKey) -> Unit)?,
     onCloseAnalytics: () -> Unit,
+    correlations: List<FactorAnalytics.CorrelationPair>? = null,
+    correlationsLoading: Boolean = false,
+    onCorrelations: () -> Unit = {},
+    onCloseCorrelations: () -> Unit = {},
     onDismiss: () -> Unit,
     onApply: (List<FactorWeight>, Int, ScoringMode) -> Unit,
 ) {
@@ -500,6 +565,7 @@ fun FactorPickerDialog(
     var topN by remember { mutableStateOf(initialTopN) }
     var scoring by remember { mutableStateOf(initialScoring) }
     var query by remember { mutableStateOf("") }
+    var showCorr by remember { mutableStateOf(false) }
     val filtered = FactorKey.entries.filter {
         query.isBlank() ||
             it.label.contains(query, ignoreCase = true) ||
@@ -531,6 +597,17 @@ fun FactorPickerDialog(
                             .clickable {
                                 val keys = selected.keys.toList()
                                 keys.forEach { selected[it] = 1.0 / keys.size.coerceAtLeast(1) }
+                            }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                    Text(
+                        "相关性",
+                        fontSize = 9.sp,
+                        color = ShiguPalette.Ink,
+                        modifier = Modifier
+                            .clickable {
+                                showCorr = true
+                                onCorrelations()
                             }
                             .padding(horizontal = 4.dp, vertical = 2.dp),
                     )
@@ -640,6 +717,17 @@ fun FactorPickerDialog(
             stats = analytics,
             loading = analyticsLoading,
             onClose = onCloseAnalytics,
+        )
+    }
+
+    if (showCorr) {
+        FactorCorrelationDialog(
+            pairs = correlations,
+            loading = correlationsLoading,
+            onClose = {
+                showCorr = false
+                onCloseCorrelations()
+            },
         )
     }
 }
@@ -812,6 +900,274 @@ private fun FactorStatsDialog(
                         color = ShiguPalette.InkFaint,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FactorCorrelationDialog(
+    pairs: List<FactorAnalytics.CorrelationPair>?,
+    loading: Boolean,
+    onClose: () -> Unit,
+) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = true)) {
+        Surface(color = ShiguPalette.Paper, shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("因子相关性", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("关闭", fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onClose))
+                }
+                Text(
+                    "当前截面的 Pearson 相关；|r| > 0.7 视为高度重叠，不建议重复加权。",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkFaint,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                when {
+                    loading -> Text("正在计算相关性…", fontSize = 10.sp, color = ShiguPalette.InkSoft)
+                    pairs == null -> Text("暂无结果", fontSize = 10.sp, color = ShiguPalette.InkSoft)
+                    else -> LazyColumn(Modifier.heightIn(max = 500.dp)) {
+                        items(pairs.take(25)) { p ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${p.a.shortLabel} × ${p.b.shortLabel}", fontSize = 9.sp, modifier = Modifier.weight(1f))
+                                Text(
+                                    "%.2f".format(p.corr),
+                                    fontSize = 10.sp,
+                                    color = if (kotlin.math.abs(p.corr) > 0.7) ShiguPalette.Alert else ShiguPalette.InkSoft,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("n=${p.samples}", fontSize = 7.5.sp, color = ShiguPalette.InkFaint)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomFactorDialog(
+    library: List<CustomFactor>,
+    selected: List<CustomFactorWeight>,
+    onSave: (CustomFactor) -> String?,
+    onDelete: (String) -> Unit,
+    onAdd: (CustomFactor) -> Unit,
+    onRemove: (String) -> Unit,
+    onWeight: (String, Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var editing by remember { mutableStateOf<CustomFactor?>(null) }
+    var creating by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(vertical = 16.dp),
+            color = ShiguPalette.Paper,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            if (creating || editing != null) {
+                CustomFactorEditor(
+                    initial = editing,
+                    onCancel = {
+                        creating = false
+                        editing = null
+                    },
+                    onSave = { factor ->
+                        val err = onSave(factor)
+                        if (err == null) {
+                            creating = false
+                            editing = null
+                        }
+                        err
+                    },
+                )
+            } else {
+                Column(Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("自定义因子", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        Text("新建公式", fontSize = 9.sp, color = ShiguPalette.Ink, modifier = Modifier.clickable { creating = true })
+                        Spacer(Modifier.width(10.dp))
+                        Text("关闭", fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onDismiss))
+                    }
+                    Text(
+                        "用现有因子做算术：+ - * / ^、括号、abs/sqrt/log/min/max/clip。保存后加入当前筛选，权重默认 20%。",
+                        fontSize = 8.5.sp,
+                        color = ShiguPalette.InkSoft,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 5.dp),
+                    )
+                    if (selected.isNotEmpty()) {
+                        Text("当前筛选已加入", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = ShiguPalette.InkSoft)
+                        selected.forEach { cw ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${cw.factor.name} · ${(cw.weight * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                    Text(cw.factor.expression, fontSize = 7.5.sp, color = ShiguPalette.InkFaint)
+                                }
+                                Text("−", fontSize = 11.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable { onWeight(cw.factor.id, cw.weight - 0.05) }.padding(horizontal = 4.dp))
+                                Text("+", fontSize = 11.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable { onWeight(cw.factor.id, cw.weight + 0.05) }.padding(horizontal = 4.dp))
+                                Text("移除", fontSize = 8.sp, color = ShiguPalette.Alert, modifier = Modifier.clickable { onRemove(cw.factor.id) })
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    SketchDivider(seed = "custom-factor")
+                    Text("因子库", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = ShiguPalette.InkSoft, modifier = Modifier.padding(top = 5.dp, bottom = 2.dp))
+                    if (library.isEmpty()) {
+                        Text("还没有自定义因子。点右上角“新建公式”。", fontSize = 9.sp, color = ShiguPalette.InkSoft)
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                            items(library, key = { it.id }) { f ->
+                                val added = selected.any { it.factor.id == f.id }
+                                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(f.name, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(if (f.higherIsBetter) "↑" else "↓", fontSize = 8.sp, color = ShiguPalette.InkFaint)
+                                        }
+                                        Text(f.expression, fontSize = 7.5.sp, color = ShiguPalette.InkFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    if (!added) {
+                                        Text("加入", fontSize = 8.5.sp, color = ShiguPalette.Ink, modifier = Modifier.clickable { onAdd(f) }.padding(horizontal = 5.dp))
+                                    } else {
+                                        Text("已加入", fontSize = 8.sp, color = ShiguPalette.InkFaint, modifier = Modifier.padding(horizontal = 5.dp))
+                                    }
+                                    Text("编辑", fontSize = 8.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable { editing = f }.padding(horizontal = 4.dp))
+                                    Text("删除", fontSize = 8.sp, color = ShiguPalette.Alert, modifier = Modifier.clickable { onDelete(f.id) }.padding(horizontal = 4.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomFactorEditor(
+    initial: CustomFactor?,
+    onCancel: () -> Unit,
+    onSave: (CustomFactor) -> String?,
+) {
+    var name by remember { mutableStateOf(initial?.name ?: "新公式") }
+    var expression by remember { mutableStateOf(initial?.expression ?: "") }
+    var unit by remember { mutableStateOf(initial?.unit ?: "") }
+    var description by remember { mutableStateOf(initial?.description ?: "") }
+    var higher by remember { mutableStateOf(initial?.higherIsBetter ?: true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Column(Modifier.padding(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (initial == null) "新建公式" else "编辑公式", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text("取消", fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onCancel))
+        }
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("名称", fontSize = 9.sp) },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = expression,
+            onValueChange = { expression = it; error = null },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("公式", fontSize = 9.sp) },
+            placeholder = { Text("例如 ROE / PE 或 RSRS_RIGHT / VOL20", fontSize = 9.sp) },
+            minLines = 2,
+            maxLines = 4,
+            textStyle = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "变量可用 FactorKey.name 或别名：RSRS、LLT、VOL20、ROE、PE、PB、MKT_CAP、AMOUNT20、TURNOVER20…",
+            fontSize = 7.5.sp,
+            color = ShiguPalette.InkFaint,
+            modifier = Modifier.padding(top = 2.dp, bottom = 3.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("方向", fontSize = 9.sp, color = ShiguPalette.InkSoft)
+            PaperPill("越高越好", higher, { higher = true })
+            PaperPill("越低越好", !higher, { higher = false })
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(
+                value = unit,
+                onValueChange = { unit = it },
+                modifier = Modifier.weight(0.4f),
+                label = { Text("单位", fontSize = 9.sp) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                modifier = Modifier.weight(0.6f),
+                label = { Text("说明", fontSize = 9.sp) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text("常用变量", fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold, color = ShiguPalette.InkSoft, modifier = Modifier.padding(top = 5.dp, bottom = 2.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(FactorVariables.list.take(24)) { v ->
+                Text(
+                    v.name,
+                    fontSize = 7.5.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier
+                        .border(0.8.dp, ShiguPalette.InkFaint, RoundedCornerShape(4.dp))
+                        .clickable {
+                            expression = if (expression.isBlank()) v.name else "$expression ${v.name}"
+                            error = null
+                        }
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+            }
+        }
+        if (error != null) {
+            Text(error!!, fontSize = 8.5.sp, color = ShiguPalette.Alert, modifier = Modifier.padding(top = 3.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier
+                    .weight(0.35f)
+                    .border(1.dp, ShiguPalette.InkFaint, RoundedCornerShape(10.dp))
+                    .clickable(onClick = onCancel)
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("取消", fontSize = 12.sp, color = ShiguPalette.InkSoft) }
+            Box(Modifier.weight(0.65f)) {
+                SketchButton(
+                    label = "保存公式",
+                    onClick = {
+                        val factor = CustomFactor(
+                            id = initial?.id ?: UUID.randomUUID().toString().take(8),
+                            name = name.trim(),
+                            expression = expression.trim(),
+                            higherIsBetter = higher,
+                            unit = unit.trim(),
+                            description = description.trim(),
+                        )
+                        error = onSave(factor)
+                    },
+                    enabled = name.isNotBlank() && expression.isNotBlank(),
+                )
             }
         }
     }
