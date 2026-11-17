@@ -22,6 +22,22 @@ object SyncBus {
     private val _state = MutableStateFlow(SyncState())
     val state: StateFlow<SyncState> = _state
 
+    @Volatile
+    var cancelRequested: Boolean = false
+        private set
+
+    fun requestCancel() {
+        cancelRequested = true
+    }
+
+    fun resetCancel() {
+        cancelRequested = false
+    }
+
+    fun checkCancelled() {
+        if (cancelRequested) throw kotlinx.coroutines.CancellationException("同步已取消")
+    }
+
     fun update(block: (SyncState) -> SyncState) {
         _state.value = block(_state.value)
     }
@@ -38,6 +54,10 @@ class SyncManager(
 ) {
     private val mutex = Mutex()
 
+    fun cancel() {
+        SyncBus.requestCancel()
+    }
+
     suspend fun sync(
         mode: SyncMode,
         universe: Universe = settings.dailyUniverse,
@@ -46,6 +66,7 @@ class SyncManager(
             return@withContext Result.failure(IllegalStateException("同步正在进行"))
         }
         try {
+            SyncBus.resetCancel()
             SyncBus.update {
                 SyncState(
                     running = true,
@@ -56,9 +77,18 @@ class SyncManager(
                 )
             }
             val stocks = api.fetchStockList()
-            if (stocks.isEmpty()) error("股票列表为空")
+            SyncBus.checkCancelled()
+            if (stocks.isEmpty()) error("股票列表为空")            // 部分分页失败时不要把旧代码清掉：新列表至少要和上次差不多大。
+            val previousCount = db.countStocks()
+            if (stocks.size < 3000) {
+                error("股票列表异常：本次仅 ${stocks.size} 只，已停止清理，请重试")
+            }
+            if (previousCount >= 3000 && stocks.size < previousCount * 0.98) {
+                error("股票列表异常：本次 ${stocks.size} 只，上次 $previousCount 只；已停止清理，请重试")
+            }
             db.upsertStocks(stocks)
             db.pruneStocks(stocks.map { it.code })
+            db.recordStatusSnapshot(stocks, LocalDate.now().toString())
             val today = LocalDate.now().toString()
             db.upsertValuations(
                 stocks.map {
@@ -96,6 +126,7 @@ class SyncManager(
                     async(Dispatchers.IO) {
                         sem.withPermit {
                             try {
+                                SyncBus.checkCancelled()
                                 val last = db.getLastBarDate(code)
                                 val limit = when {
                                     mode == SyncMode.FULL || last == null -> 300
@@ -164,6 +195,11 @@ class SyncManager(
                 )
             }
             Result.success(Unit)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            SyncBus.update {
+                it.copy(running = false, phase = "已取消", message = "同步已取消", finishedAt = System.currentTimeMillis())
+            }
+            Result.failure(e)
         } catch (e: Exception) {
             SyncBus.update {
                 it.copy(
@@ -188,6 +224,7 @@ class SyncManager(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         if (!mutex.tryLock()) return@withContext Result.failure(IllegalStateException("同步正在进行"))
         try {
+            SyncBus.resetCancel()
             SyncBus.update {
                 SyncState(
                     running = true,
@@ -209,6 +246,7 @@ class SyncManager(
                     async(Dispatchers.IO) {
                         sem.withPermit {
                             try {
+                                SyncBus.checkCancelled()
                                 val v = api.fetchValuationHistory(code)
                                 if (v.isNotEmpty()) db.upsertValuations(v)
                             } catch (_: Exception) {
@@ -235,6 +273,9 @@ class SyncManager(
                 )
             }
             Result.success(Unit)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            SyncBus.update { it.copy(running = false, phase = "已取消", message = "同步已取消", finishedAt = System.currentTimeMillis()) }
+            Result.failure(e)
         } catch (e: Exception) {
             SyncBus.update { it.copy(running = false, phase = "失败", message = e.message ?: "估值同步失败", finishedAt = System.currentTimeMillis()) }
             Result.failure(e)
@@ -250,6 +291,7 @@ class SyncManager(
     suspend fun syncProfiles(): Result<Unit> = withContext(Dispatchers.IO) {
         if (!mutex.tryLock()) return@withContext Result.failure(IllegalStateException("同步正在进行"))
         try {
+            SyncBus.resetCancel()
             val startedAt = System.currentTimeMillis()
             SyncBus.update {
                 SyncState(
@@ -262,11 +304,13 @@ class SyncManager(
             }
             val reportDate = api.resolveReportDate()
             if (reportDate.isBlank()) error("无法确定最新报告期")
+            SyncBus.checkCancelled()
 
             SyncBus.update {
                 it.copy(phase = "同步企业资料", message = "报告期 $reportDate · 实控人/上市日期", done = 0, total = 0)
             }
             val orgs = api.fetchOrgProfiles { done, total ->
+                SyncBus.checkCancelled()
                 SyncBus.update { it.copy(phase = "同步企业资料", done = done, total = total) }
             }
 
@@ -274,13 +318,16 @@ class SyncManager(
                 it.copy(phase = "同步财务快照", message = "报告期 $reportDate · ROE/毛利率/增速/负债率", done = 0, total = 0)
             }
             val finances = api.fetchFinanceProfiles(reportDate) { done, total ->
+                SyncBus.checkCancelled()
                 SyncBus.update { it.copy(phase = "同步财务快照", done = done, total = total) }
             }
+            SyncBus.checkCancelled()
 
             SyncBus.update {
                 it.copy(phase = "同步第一大股东", message = "报告期 $reportDate · 用于辅助判断企业性质", done = 0, total = 0)
             }
             val holders = api.fetchHolderProfiles(reportDate) { done, total ->
+                SyncBus.checkCancelled()
                 SyncBus.update { it.copy(phase = "同步第一大股东", done = done, total = total) }
             }
 
@@ -290,6 +337,8 @@ class SyncManager(
                 finances = finances.associateBy { it.code },
             )
             db.updateProfiles(profiles)
+            db.upsertFundamentals(finances)
+            db.recordStatusSnapshot(db.getStocks(), LocalDate.now().toString())
             db.putMeta("profile_report_date", reportDate)
             db.putMeta("profile_sync", System.currentTimeMillis().toString())
             val covered = db.countProfiles()
@@ -304,6 +353,9 @@ class SyncManager(
                 )
             }
             Result.success(Unit)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            SyncBus.update { it.copy(running = false, phase = "已取消", message = "同步已取消", finishedAt = System.currentTimeMillis()) }
+            Result.failure(e)
         } catch (e: Exception) {
             SyncBus.update {
                 it.copy(

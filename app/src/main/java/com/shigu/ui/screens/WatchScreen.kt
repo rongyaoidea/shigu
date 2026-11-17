@@ -36,6 +36,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.shigu.core.Holding
 import com.shigu.core.PaperDetail
+import com.shigu.core.Trade
 import com.shigu.core.WatchItem
 import com.shigu.core.SinceCreationResult
 import com.shigu.core.StrategyConfig
@@ -44,6 +45,7 @@ import com.shigu.ui.UiState
 import com.shigu.ui.components.ChangeText
 import com.shigu.ui.components.EmptyCard
 import com.shigu.ui.components.EquityChart
+import com.shigu.ui.components.MetricCell
 import com.shigu.ui.components.MiniTag
 import com.shigu.ui.components.SectionLabel
 import com.shigu.ui.components.boardText
@@ -67,6 +69,9 @@ fun WatchScreen(
     LaunchedEffect(Unit) { onWarm() }
     val list = state.watchlist
     val changeMap = state.strategyChanges.associateBy { it.strategyId }
+    val live = state.strategies.mapNotNull { state.since[it.id] }
+    val combinedEquity = live.sumOf { 1_000_000.0 * (1.0 + it.returnPct) }
+    val avgReturn = if (live.isEmpty()) 0.0 else live.map { it.returnPct }.average()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -85,7 +90,11 @@ fun WatchScreen(
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("策略创建后自动记录", fontSize = 8.sp, color = ShiguPalette.InkFaint)
+                        Text(
+                            "策略创建后自动记录",
+                            fontSize = 8.sp,
+                            color = ShiguPalette.InkFaint,
+                        )
                         Text(
                             if (state.simulationLoading) "计算中…" else "每日 16:10 更新",
                             fontSize = 9.sp,
@@ -98,6 +107,12 @@ fun WatchScreen(
                             modifier = Modifier.clickable(onClick = onForceRefresh),
                         )
                     }
+                }
+                Spacer(Modifier.height(5.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    MetricCell("组合纸面", "¥%.0f".format(combinedEquity), Modifier.weight(1f))
+                    MetricCell("平均收益", formatPct(avgReturn), Modifier.weight(1f))
+                    MetricCell("策略数", "${live.size}", Modifier.weight(1f))
                 }
             }
         }
@@ -382,9 +397,16 @@ private fun PaperDetailDialog(detail: PaperDetail, onClose: () -> Unit) {
                         HoldingRow(h)
                     }
                 }
+                if (detail.trades.isNotEmpty()) {
+                    item { SketchDivider(seed = "paper-trades") }
+                    item { Text("交易流水 · 最近 ${minOf(12, detail.trades.size)} 笔", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) }
+                    items(detail.trades.takeLast(12).reversed()) { t ->
+                        TradeRow(t)
+                    }
+                }
                 item {
                     Text(
-                        "纸面模拟：收盘信号、次日开盘、整手 100 股、等权、成本 8bps/边；不含冲击成本。",
+                        "纸面模拟：收盘信号、次日开盘、整手 100 股（科创 200）、等权；佣金 8bps + 卖出印花税 5bps + 滑点 5bps，不含冲击成本。",
                         fontSize = 8.sp,
                         color = ShiguPalette.InkFaint,
                     )
@@ -413,6 +435,35 @@ private fun HoldingRow(h: Holding) {
             Text(
                 "权重 %.1f%% · 入选 %.2f".format(h.weight * 100, h.entryPrice),
                 fontSize = 8.sp,
+                color = ShiguPalette.InkFaint,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TradeRow(t: Trade) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(t.name, fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "${t.entryDate} → ${t.exitDate ?: "持仓中"} · ${t.reason}",
+                fontSize = 7.5.sp,
+                color = ShiguPalette.InkFaint,
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "${if (t.pnl >= 0) "+" else ""}%.0f".format(t.pnl),
+                fontSize = 9.5.sp,
+                color = changeColor(if (t.pnl >= 0) 1.0 else -1.0),
+            )
+            Text(
+                "${formatPct(t.pnlPct)} · 费 %.0f".format(t.fees),
+                fontSize = 7.5.sp,
                 color = ShiguPalette.InkFaint,
             )
         }

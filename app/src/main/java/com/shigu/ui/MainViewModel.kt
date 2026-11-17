@@ -9,6 +9,7 @@ import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
 import com.shigu.core.FactorEngine
 import com.shigu.core.FactorKey
+import com.shigu.core.FactorStats
 import com.shigu.core.FactorWeight
 import com.shigu.core.PanelBuilder
 import com.shigu.core.ScreenerResult
@@ -45,6 +46,9 @@ data class UiState(
     val screenPool: Int = 300,
     val screenResult: ScreenerResult? = null,
     val screenLoading: Boolean = false,
+    val factorStats: FactorStats? = null,
+    val factorStatsLoading: Boolean = false,
+    val factorStatsKey: FactorKey? = null,
     val strategies: List<StrategyConfig> = emptyList(),
     val selectedStrategyId: String? = null,
     val autoUpdate: Boolean = true,
@@ -128,6 +132,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dailySync() = startSync(SyncMode.DAILY, settings.dailyUniverse)
     fun fullSync() = startSync(SyncMode.FULL, Universe.ALL)
     fun valuationSync() = startValuationSync(Universe.TOP_800)
+    fun cancelSync() = syncManager.cancel()
 
     /** 企业性质/上市日期/财务快照；不跟行情同步绑定，避免每次更新都多打几十个请求。 */
     fun profileSync() {
@@ -200,7 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         runScreen()
     }
 
-    fun applyFactors(factors: List<FactorWeight>, topN: Int) {
+    fun applyFactors(factors: List<FactorWeight>, topN: Int, scoring: com.shigu.core.ScoringMode) {
         if (factors.isEmpty()) {
             _state.update { it.copy(message = "至少选择一个因子") }
             return
@@ -211,6 +216,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             subtitle = "用户自选因子",
             factors = factors,
             maxPositions = topN,
+            scoring = scoring,
         )
         _state.update { it.copy(screenConfig = cfg) }
         runScreen()
@@ -220,6 +226,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val cfg = _state.value.screenConfig.copy(filters = filters)
         _state.update { it.copy(screenConfig = cfg) }
         runScreen()
+    }
+
+    fun analyzeFactor(key: FactorKey) {
+        if (_state.value.factorStatsLoading) return
+        _state.update { it.copy(factorStatsLoading = true, factorStatsKey = key, factorStats = null) }
+        viewModelScope.launch {
+            val r = runCatching { market.factorStats(_state.value.screenConfig, key) }
+            _state.update {
+                it.copy(
+                    factorStatsLoading = false,
+                    factorStats = r.getOrNull(),
+                    message = r.exceptionOrNull()?.message ?: it.message,
+                )
+            }
+        }
+    }
+
+    fun clearFactorStats() {
+        _state.update { it.copy(factorStats = null, factorStatsKey = null, factorStatsLoading = false) }
     }
 
     fun runScreen() {

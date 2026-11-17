@@ -94,14 +94,7 @@ data class Stock(
         ) 5.0 else board.limitPct
 
     /** 上市自然日；用行情日计算，避免回测时用到“今天”的未来信息。 */
-    fun listedDaysAt(date: String): Int? {
-        if (listedDate.length < 10 || date.length < 10) return null
-        return runCatching {
-            val from = LocalDate.parse(listedDate.take(10))
-            val to = LocalDate.parse(date.take(10))
-            ChronoUnit.DAYS.between(from, to).toInt()
-        }.getOrNull()
-    }
+    fun listedDaysAt(date: String): Int? = listedDaysBetween(listedDate, date)
 
     val marketLabel: String
         get() = when {
@@ -162,6 +155,11 @@ data class WatchItem(
  */
 data class FactorWeight(val key: FactorKey, val weight: Double = 0.2)
 
+enum class ScoringMode(val label: String) {
+    ZSCORE("z-score"),
+    RANK("排名"),
+}
+
 data class StrategyFilters(
     val minPrice: Double = 2.0,
     val minAmount20: Double = 50_000_000.0,
@@ -202,6 +200,10 @@ data class StrategyConfig(
     val lookbackDays: Int = 500,
     val universeSize: Int = 800,
     val costBps: Double = 8.0,
+    val stampDutyBps: Double = 5.0,
+    val slippageBps: Double = 5.0,
+    val transferFeeBps: Double = 0.1,
+    val scoring: ScoringMode = ScoringMode.ZSCORE,
     val builtin: Boolean = false,
     val createdAt: Long = 0L,
 ) {
@@ -218,6 +220,7 @@ data class Pick(
     val factors: Map<FactorKey, Double?>,
     val board: Board,
     val isSt: Boolean,
+    val contributions: Map<FactorKey, Double> = emptyMap(),
 )
 
 data class Holding(
@@ -267,6 +270,7 @@ data class PaperDetail(
     val returnPct: Double,
     val benchmarkPct: Double,
     val change: StrategyChange?,
+    val trades: List<Trade> = emptyList(),
 )
 
 data class EquityPoint(val date: String, val strategy: Double, val benchmark: Double)
@@ -283,6 +287,7 @@ data class Trade(
     val pnlPct: Double,
     val holdDays: Int,
     val reason: String,
+    val fees: Double = 0.0,
 )
 
 data class BacktestStats(
@@ -300,6 +305,7 @@ data class BacktestStats(
     val avgHoldDays: Double,
     val universeSize: Int,
     val note: String,
+    val totalFees: Double = 0.0,
 )
 
 data class BacktestResult(
@@ -321,6 +327,7 @@ data class SinceCreationResult(
     val picks: List<Pick>,
     val portfolio: PortfolioSnapshot? = null,
     val equity: List<EquityPoint> = emptyList(),
+    val trades: List<Trade> = emptyList(),
 )
 
 data class ScreenerResult(
@@ -328,6 +335,28 @@ data class ScreenerResult(
     val totalCandidates: Int,
     val poolSize: Int,
     val factorValues: Map<FactorKey, Double> = emptyMap(),
+)
+
+/** 时点状态快照：只在状态变化时写历史，供未来无前视回测使用。 */
+data class StatusSnapshot(
+    val code: String,
+    val date: String,
+    val stStatus: StStatus,
+    val ownerType: OwnerType,
+    val suspended: Boolean,
+    val listedDate: String,
+)
+
+/** 单因子体检结果：Rank IC / ICIR / 分层多空 / 覆盖率。 */
+data class FactorStats(
+    val key: FactorKey,
+    val coverage: Double,
+    val meanIc: Double,
+    val icIr: Double,
+    val positiveRate: Double,
+    val decileSpread: Double,
+    val sampleDays: Int,
+    val forwardDays: Int,
 )
 
 enum class SyncMode { QUICK, DAILY, FULL, VALUATION, PROFILE }
@@ -366,8 +395,16 @@ data class DataStats(
     val profileReportDate: String = "",
 )
 
-fun format1(v: Double?): String = if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.1f", v)
-fun format2(v: Double?): String = if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.2f", v)
+fun listedDaysBetween(listedDate: String, date: String): Int? {
+    if (listedDate.length < 10 || date.length < 10) return null
+    return runCatching {
+        val from = LocalDate.parse(listedDate.take(10))
+        val to = LocalDate.parse(date.take(10))
+        ChronoUnit.DAYS.between(from, to).toInt()
+    }.getOrNull()
+}
+
+fun format1(v: Double?): String = if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.1f", v)fun format2(v: Double?): String = if (v == null || v.isNaN()) "—" else String.format(Locale.CHINA, "%.2f", v)
 fun formatPct(v: Double?, digits: Int = 2): String {
     if (v == null || v.isNaN()) return "—"
     val s = String.format(Locale.CHINA, if (digits == 1) "%.1f" else "%.2f", v * 100.0)

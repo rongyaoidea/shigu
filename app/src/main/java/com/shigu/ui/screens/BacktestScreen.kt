@@ -221,7 +221,7 @@ fun BacktestScreen(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "回测：收盘出信号，次日开盘成交；等权，含成本，不含冲击成本。",
+                        "回测：收盘出信号，次日开盘成交；等权；佣金 + 卖出印花税 + 滑点，不含冲击成本。",
                         fontSize = 8.5.sp,
                         color = ShiguPalette.InkFaint,
                     )
@@ -554,7 +554,7 @@ private fun ResultCard(result: BacktestResult, onOpenStock: (String) -> Unit) {
         Row(Modifier.fillMaxWidth()) {
             MetricCell("交易", "${s.tradeCount}", Modifier.weight(1f))
             MetricCell("平均持有", "%.1f天".format(s.avgHoldDays), Modifier.weight(1f))
-            MetricCell("波动", formatPct(s.volatility), Modifier.weight(1f))
+            MetricCell("累计费用", "¥%.0f".format(s.totalFees), Modifier.weight(1f))
             MetricCell("池", "${s.universeSize}", Modifier.weight(1f))
         }
         Spacer(Modifier.height(5.dp))

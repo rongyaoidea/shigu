@@ -48,6 +48,7 @@ fun DataScreen(
     onFull: () -> Unit,
     onValuation: () -> Unit,
     onProfile: () -> Unit,
+    onCancelSync: () -> Unit,
     onAutoUpdate: (Boolean) -> Unit,
     onDailyUniverse: (Universe) -> Unit,
 ) {
@@ -98,6 +99,8 @@ fun DataScreen(
                             Text("同步中 · ${sync.phase}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             Text("${sync.done}/${sync.total} · 失败 ${sync.failed}", fontSize = 9.sp, color = ShiguPalette.InkSoft)
                         }
+                        Text("取消", fontSize = 10.sp, color = ShiguPalette.Alert, modifier = Modifier.clickable(onClick = onCancelSync))
+                        Spacer(Modifier.width(8.dp))
                         Text("${(sync.fraction * 100).toInt()}%", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Spacer(Modifier.height(6.dp))

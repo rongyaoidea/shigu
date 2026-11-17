@@ -20,6 +20,9 @@ class Panel(
     val pb: Array<DoubleArray>,
     val marketCap: Array<DoubleArray>,
     val benchmark: DoubleArray,
+    val factorCache: MutableMap<Triple<Int, Int, FactorKey>, Double?> = HashMap(),
+    val crossCache: MutableMap<Pair<Int, FactorKey>, DoubleArray> = HashMap(),
+    val statusHistory: Map<String, List<StatusSnapshot>> = emptyMap(),
 ) {
     val lastIndex: Int get() = calendar.lastIndex
     private val dateIndex: Map<String, Int> = calendar.withIndex().associate { it.value to it.index }
@@ -27,6 +30,24 @@ class Panel(
 
     fun indexOfDate(date: String): Int? = dateIndex[date]
     fun indexOfCode(code: String): Int? = codeIndex[code]
+
+    /** 最后一个 <= date 的状态快照；没有历史时返回 null。 */
+    fun statusAt(code: String, date: String): StatusSnapshot? {
+        val list = statusHistory[code] ?: return null
+        var lo = 0
+        var hi = list.lastIndex
+        var ans: StatusSnapshot? = null
+        while (lo <= hi) {
+            val mid = (lo + hi) / 2
+            if (list[mid].date <= date) {
+                ans = list[mid]
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        return ans
+    }
 }
 
 object PanelBuilder {
@@ -37,6 +58,7 @@ object PanelBuilder {
         valuationsByCode: Map<String, List<ValuationPoint>> = emptyMap(),
         benchmarkBars: List<DailyBar> = emptyList(),
         fillCurrentSnapshot: Boolean = false,
+        statusHistory: Map<String, List<StatusSnapshot>> = emptyMap(),
     ): Panel {
         val n = stocks.size
         val m = calendar.size
@@ -85,7 +107,7 @@ object PanelBuilder {
             val di = dateToIndex[b.date] ?: return@forEach
             bench[di] = b.close
         }
-        return Panel(calendar, stocks, open, close, high, low, volume, amount, turnover, pe, pb, cap, bench)
+        return Panel(calendar, stocks, open, close, high, low, volume, amount, turnover, pe, pb, cap, bench, statusHistory = statusHistory)
     }
 }
 
@@ -93,6 +115,7 @@ data class ScoredStock(
     val stockIndex: Int,
     val score: Double,
     val values: Map<FactorKey, Double?>,
+    val contributions: Map<FactorKey, Double> = emptyMap(),
 )
 
 object FactorEngine {
@@ -321,6 +344,14 @@ object FactorEngine {
 
     fun value(panel: Panel, si: Int, i: Int, key: FactorKey): Double? {
         if (i < 0 || si !in panel.stocks.indices) return null
+        val cacheKey = Triple(si, i, key)
+        if (panel.factorCache.containsKey(cacheKey)) return panel.factorCache[cacheKey]
+        val v = computeValue(panel, si, i, key)
+        panel.factorCache[cacheKey] = v
+        return v
+    }
+
+    private fun computeValue(panel: Panel, si: Int, i: Int, key: FactorKey): Double? {
         val close = panel.close[si]
         val high = panel.high[si]
         val amount = panel.amount[si]
@@ -477,7 +508,12 @@ object FactorEngine {
             FactorKey.PE -> panel.pe[si][i].takeIf { !it.isNaN() && it > 0 }
             FactorKey.PB -> panel.pb[si][i].takeIf { !it.isNaN() && it > 0 }
             FactorKey.MARKET_CAP -> panel.marketCap[si][i].takeIf { !it.isNaN() && it > 0 }
-            FactorKey.LISTED_DAYS -> panel.stocks[si].listedDaysAt(panel.calendar[i])?.toDouble()
+            FactorKey.LISTED_DAYS -> {
+                val stock = panel.stocks[si]
+                val listed = panel.statusAt(stock.code, panel.calendar[i])?.listedDate?.takeIf { it.isNotBlank() }
+                    ?: stock.listedDate
+                listedDaysBetween(listed, panel.calendar[i])?.toDouble()
+            }
             FactorKey.ROE -> panel.stocks[si].roe
             FactorKey.GROSS_MARGIN -> panel.stocks[si].grossMargin
             FactorKey.NET_MARGIN -> panel.stocks[si].netMargin
@@ -525,18 +561,42 @@ object FactorEngine {
             }
         }
 
+        // 排名打分：每个因子在截面上转成 [-1, 1] 的百分位，降低极端值影响。
+        val rankScores = if (config.scoring == ScoringMode.RANK) {
+            val out = HashMap<FactorKey, DoubleArray>(raw.size)
+            raw.forEach { (key, arr) ->
+                val valid = arr.withIndex().filter { !it.value.isNaN() }.sortedBy { it.value }
+                if (valid.size >= 5) {
+                    val ranked = DoubleArray(count) { Double.NaN }
+                    val denom = (valid.size - 1).coerceAtLeast(1)
+                    valid.forEachIndexed { rank, item ->
+                        ranked[item.index] = rank.toDouble() / denom * 2.0 - 1.0
+                    }
+                    out[key] = ranked
+                }
+            }
+            out
+        } else {
+            emptyMap()
+        }
+
         val result = ArrayList<ScoredStock>(count)
         for (si in 0 until count) {
             val stock = panel.stocks[si]
             val price = panel.close[si][i]
             val filters = config.filters
+            val status = panel.statusAt(stock.code, panel.calendar[i])
+            val stStatus = status?.stStatus ?: stock.stStatus
+            val ownerType = status?.ownerType ?: stock.ownerType
+            val suspended = status?.suspended ?: stock.suspended
+            val listedDate = status?.listedDate?.takeIf { it.isNotBlank() } ?: stock.listedDate
             if (price.isNaN() || price < filters.minPrice) continue
-            if (filters.excludeSt && stock.stStatus != StStatus.NORMAL) continue
-            if (filters.stStatuses.isNotEmpty() && stock.stStatus !in filters.stStatuses) continue
-            if (filters.owners.isNotEmpty() && stock.ownerType !in filters.owners) continue
-            if (filters.excludeSuspended && stock.suspended) continue
+            if (filters.excludeSt && stStatus != StStatus.NORMAL) continue
+            if (filters.stStatuses.isNotEmpty() && stStatus !in filters.stStatuses) continue
+            if (filters.owners.isNotEmpty() && ownerType !in filters.owners) continue
+            if (filters.excludeSuspended && suspended) continue
             if (filters.minListedDays > 0) {
-                val days = stock.listedDaysAt(panel.calendar[i]) ?: continue
+                val days = listedDaysBetween(listedDate, panel.calendar[i]) ?: continue
                 if (days < filters.minListedDays) continue
             }
             if (stock.board !in filters.boards) continue
@@ -560,19 +620,36 @@ object FactorEngine {
             var score = 0.0
             var usedWeight = 0.0
             val values = LinkedHashMap<FactorKey, Double?>()
+            val rawContrib = LinkedHashMap<FactorKey, Double>()
             config.factors.forEach { fw ->
                 val v = raw[fw.key]?.getOrNull(si)?.takeIf { !it.isNaN() }
                 values[fw.key] = v
-                val st = stats[fw.key]
-                if (v != null && st != null) {
-                    val z = ((v - st.first) / st.second).coerceIn(-2.5, 2.5)
-                    val direction = if (fw.key.higherIsBetter) 1.0 else -1.0
-                    score += fw.weight * z * direction
+                val direction = if (fw.key.higherIsBetter) 1.0 else -1.0
+                val scoreValue = if (config.scoring == ScoringMode.RANK) {
+                    rankScores[fw.key]?.getOrNull(si)?.takeIf { !it.isNaN() }
+                } else {
+                    val st = stats[fw.key]
+                    if (v != null && st != null) {
+                        ((v - st.first) / st.second).coerceIn(-2.5, 2.5)
+                    } else {
+                        null
+                    }
+                }
+                if (scoreValue != null) {
+                    val weighted = fw.weight * scoreValue * direction
+                    score += weighted
+                    rawContrib[fw.key] = weighted
                     usedWeight += fw.weight
                 }
             }
             if (usedWeight < totalWeight * 0.5) continue
-            result += ScoredStock(si, score / usedWeight, values)
+            val denom = if (usedWeight > 0.0) usedWeight else 1.0
+            result += ScoredStock(
+                stockIndex = si,
+                score = score / denom,
+                values = values,
+                contributions = rawContrib.mapValues { it.value / denom },
+            )
         }
         return result.sortedByDescending { it.score }
     }
@@ -613,6 +690,14 @@ object CrossSectionalEngine {
 
     fun values(panel: Panel, i: Int, key: FactorKey): DoubleArray? {
         if (i < W + 2) return null
+        val cacheKey = i to key
+        panel.crossCache[cacheKey]?.let { return it }
+        val computed = computeValues(panel, i, key) ?: return null
+        panel.crossCache[cacheKey] = computed
+        return computed
+    }
+
+    private fun computeValues(panel: Panel, i: Int, key: FactorKey): DoubleArray? {
         return when (key) {
             FactorKey.TEAM_COIN -> teamCoin(panel, i)
             FactorKey.OVERNIGHT_DIST -> overnightDistance(panel, i)
@@ -832,6 +917,7 @@ object ScreenerEngine {
                 factors = s.values,
                 board = stock.board,
                 isSt = stock.isSt,
+                contributions = s.contributions,
             )
         }
         return ScreenerResult(rows, scored.size, panel.stocks.size)

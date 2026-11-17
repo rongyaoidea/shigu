@@ -67,8 +67,11 @@ class PaperRepository(
                     cash = r.portfolio?.cash ?: 1_000_000.0,
                     holdingsJson = encodeHoldings(current ?: emptyList()),
                     lastChangeJson = if (change.hasChange) encodeChange(change) else null,
+                    tradesJson = encodeTrades(r.trades.takeLast(200)),
                 )
-                if (r.endDate.isNotBlank()) {
+                if (r.equity.isNotEmpty()) {
+                    r.equity.forEach { db.insertPaperEquity(config.id, it.date, it.strategy, it.benchmark) }
+                } else if (r.endDate.isNotBlank()) {
                     db.insertPaperEquity(config.id, r.endDate, equity, benchmark)
                 }
             }
@@ -87,6 +90,7 @@ class PaperRepository(
             returnPct = (st?.equity ?: 1.0) - 1.0,
             benchmarkPct = (st?.benchmark ?: 1.0) - 1.0,
             change = parseChange(config, st?.lastChangeJson),
+            trades = parseTrades(st?.tradesJson),
         )
     }
 
@@ -131,8 +135,53 @@ class PaperRepository(
         return arr.toString()
     }
 
-    private fun parseHoldings(json: String?): List<Holding> {
+    private fun encodeTrades(trades: List<com.shigu.core.Trade>): String {
+        val arr = JSONArray()
+        trades.forEach { t ->
+            arr.put(
+                JSONObject()
+                    .put("code", t.code)
+                    .put("name", t.name)
+                    .put("entryDate", t.entryDate)
+                    .put("exitDate", t.exitDate ?: JSONObject.NULL)
+                    .put("entryPrice", t.entryPrice)
+                    .put("exitPrice", t.exitPrice ?: JSONObject.NULL)
+                    .put("shares", t.shares)
+                    .put("pnl", t.pnl)
+                    .put("pnlPct", t.pnlPct)
+                    .put("holdDays", t.holdDays)
+                    .put("reason", t.reason)
+                    .put("fees", t.fees),
+            )
+        }
+        return arr.toString()
+    }
+
+    private fun parseTrades(json: String?): List<com.shigu.core.Trade> {
         if (json.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(json)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                com.shigu.core.Trade(
+                    code = o.optString("code"),
+                    name = o.optString("name"),
+                    entryDate = o.optString("entryDate"),
+                    exitDate = if (o.isNull("exitDate")) null else o.optString("exitDate"),
+                    entryPrice = o.optDouble("entryPrice", 0.0),
+                    exitPrice = if (o.isNull("exitPrice")) null else o.optDouble("exitPrice"),
+                    shares = o.optLong("shares"),
+                    pnl = o.optDouble("pnl", 0.0),
+                    pnlPct = o.optDouble("pnlPct", 0.0),
+                    holdDays = o.optInt("holdDays"),
+                    reason = o.optString("reason"),
+                    fees = o.optDouble("fees", 0.0),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun parseHoldings(json: String?): List<Holding> {        if (json.isNullOrBlank()) return emptyList()
         return runCatching {
             val arr = JSONArray(json)
             (0 until arr.length()).mapNotNull { i ->

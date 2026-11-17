@@ -2,6 +2,7 @@ package com.shigu.core
 
 import kotlin.math.floor
 import kotlin.math.pow
+import kotlin.math.round
 import kotlin.math.sqrt
 
 private data class Position(
@@ -68,9 +69,9 @@ object BacktestEngine {
             val px = panel.open[p.stockIndex][d]
             if (px.isNaN() || px <= 0) return false
             if (isLimitDown(panel, p.stockIndex, d)) return false
-            val exec = px * (1.0 - 0.0005)
+            val exec = px * (1.0 - config.slippageBps / 10_000.0)
             val gross = exec * p.shares
-            val fee = gross * config.costBps / 10_000.0
+            val fee = gross * (config.costBps + config.transferFeeBps + config.stampDutyBps) / 10_000.0
             cash += gross - fee
             positions.remove(p.code)
             val pnl = (exec - p.entryPrice) * p.shares - p.entryFee - fee
@@ -86,6 +87,7 @@ object BacktestEngine {
                 pnlPct = if (p.entryPrice > 0) exec / p.entryPrice - 1.0 else 0.0,
                 holdDays = (d - p.entryDay).coerceAtLeast(0),
                 reason = reason,
+                fees = p.entryFee + fee,
             )
             return true
         }
@@ -104,21 +106,23 @@ object BacktestEngine {
                     remaining--
                     return@forEach
                 }
+                val board = panel.stocks[si].board
+                val lot = lotSize(board)
                 val budget = available / remaining.coerceAtLeast(1)
-                val exec = open * (1.0 + 0.0005)
-                var shares = floor(budget / (exec * 100.0)).toLong() * 100L
+                val exec = open * (1.0 + config.slippageBps / 10_000.0)
+                var shares = floor(budget / (exec * lot)).toLong() * lot
                 while (shares > 0) {
                     val cost = shares * exec
-                    val fee = cost * config.costBps / 10_000.0
+                    val fee = buyFee(cost, config)
                     if (cost + fee <= available) break
-                    shares -= 100L
+                    shares -= lot
                 }
                 if (shares <= 0) {
                     remaining--
                     return@forEach
                 }
                 val cost = shares * exec
-                val fee = cost * config.costBps / 10_000.0
+                val fee = buyFee(cost, config)
                 cash -= cost + fee
                 available -= cost + fee
                 val stock = panel.stocks[si]
@@ -161,13 +165,19 @@ object BacktestEngine {
                     if (!ok) pendingExpiry += code
                 }
                 pendingRebalance?.let { targets ->
-                    val all = positions.values.toList()
+                    // 只卖出跌出目标的持仓；仍在目标里的继续持有，避免“卖出再买回”的假换手。
+                    val targetCodes = targets.map { panel.stocks[it.stockIndex].code }.toSet()
+                    val toSell = positions.values.filter { it.code !in targetCodes }.toList()
                     val unsold = LinkedHashSet<String>()
-                    all.forEach { p ->
+                    toSell.forEach { p ->
                         val ok = sellPosition(p, d, "调仓")
                         if (!ok) unsold += p.code
                     }
-                    buyTargets(targets.filter { panel.stocks[it.stockIndex].code !in unsold }, d)
+                    val newTargets = targets.filter {
+                        val code = panel.stocks[it.stockIndex].code
+                        code !in unsold && code !in positions.keys
+                    }
+                    buyTargets(newTargets, d)
                     pendingRebalance = null
                 }
             }
@@ -218,6 +228,7 @@ object BacktestEngine {
                 pnlPct = if (p.entryPrice > 0) c / p.entryPrice - 1.0 else 0.0,
                 holdDays = (lastDay - p.entryDay).coerceAtLeast(0),
                 reason = "持仓中",
+                fees = p.entryFee,
             )
         }
 
@@ -227,7 +238,7 @@ object BacktestEngine {
             config.filters.stStatuses != setOf(StStatus.NORMAL) ||
             config.filters.excludeSuspended ||
             config.filters.minListedDays > 0
-        val warning = when {
+        val baseWarning = when {
             snapshotFactors.isNotEmpty() -> {
                 "含财务快照因子（${snapshotFactors.joinToString("、") { it.label }}）：历史区间使用当前值，存在前视偏差，回测仅作参考。"
             }
@@ -239,6 +250,12 @@ object BacktestEngine {
             }
             else -> null
         }
+        val bseWarning = if (panel.stocks.any { it.board == Board.BSE }) {
+            "含北交所：日线不复权，送转/拆股会造成假跌，技术因子结果仅作参考。"
+        } else {
+            null
+        }
+        val warning = listOfNotNull(baseWarning, bseWarning).joinToString(" ").ifBlank { null }
         val totalValue = cash + positions.values.sumOf { p ->
             p.shares * (panel.close[p.stockIndex][lastDay].takeIf { !it.isNaN() } ?: p.lastClose)
         }
@@ -283,6 +300,7 @@ object BacktestEngine {
             picks = result.picks,
             portfolio = result.portfolio,
             equity = result.equity,
+            trades = result.trades,
         )
     }
 
@@ -292,7 +310,7 @@ object BacktestEngine {
             val price = panel.close[s.stockIndex][d].takeIf { !it.isNaN() } ?: return@mapNotNull null
             val prev = if (d > 0) panel.close[s.stockIndex][d - 1] else Double.NaN
             val chg = if (!prev.isNaN() && prev > 0) (price / prev - 1.0) * 100.0 else stock.changePct
-            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt)
+            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt, s.contributions)
         }
 
     private fun picksFromPositions(panel: Panel, positions: Map<String, Position>, d: Int): List<Pick> =
@@ -328,6 +346,7 @@ object BacktestEngine {
                 avgHoldDays = 0.0,
                 universeSize = panel.stocks.size,
                 note = "样本不足，尚未产生可评估的净值。",
+                totalFees = 0.0,
             )
         }
         val total = equity.last().strategy - 1.0
@@ -353,8 +372,9 @@ object BacktestEngine {
         val avgHold = closed.map { it.holdDays }.average().takeIf { !it.isNaN() } ?: 0.0
         val note = buildString {
             append("${config.rebalanceDays} 日调仓 · 等权 ${config.maxPositions} 只 · 初始资金 100 万 · 收盘信号次日开盘成交")
-            append(" · 成本 ${config.costBps.toInt()}bps/边 · 不含冲击成本")
+            append(" · 佣金 ${config.costBps.toInt()}bps + 印花税 ${config.stampDutyBps.toInt()}bps(卖) + 滑点 ${config.slippageBps.toInt()}bps")
         }
+        val totalFees = trades.sumOf { it.fees }
         return BacktestStats(
             startDate = equity.first().date,
             endDate = equity.last().date,
@@ -370,6 +390,7 @@ object BacktestEngine {
             avgHoldDays = avgHold,
             universeSize = panel.stocks.size,
             note = note,
+            totalFees = totalFees,
         )
     }
 
@@ -390,6 +411,7 @@ object BacktestEngine {
             avgHoldDays = 0.0,
             universeSize = panel.stocks.size,
             note = "样本不足，尚未产生可评估的净值。",
+            totalFees = 0.0,
         )
         return BacktestResult(
             config,
@@ -403,19 +425,42 @@ object BacktestEngine {
 
     private fun isLimitUp(panel: Panel, si: Int, d: Int): Boolean {
         if (d <= 0) return false
+        if (isNewListing(panel, si, d)) return false
         val prev = panel.close[si][d - 1]
         val open = panel.open[si][d]
         if (prev.isNaN() || open.isNaN() || prev <= 0) return false
-        val limit = panel.stocks[si].limitPct / 100.0
-        return open >= prev * (1.0 + limit - 0.003)
+        val up = limitPrice(prev, panel.stocks[si].limitPct, up = true)
+        return open >= up - 0.001
     }
 
     private fun isLimitDown(panel: Panel, si: Int, d: Int): Boolean {
         if (d <= 0) return false
+        if (isNewListing(panel, si, d)) return false
         val prev = panel.close[si][d - 1]
         val open = panel.open[si][d]
         if (prev.isNaN() || open.isNaN() || prev <= 0) return false
-        val limit = panel.stocks[si].limitPct / 100.0
-        return open <= prev * (1.0 - limit + 0.003)
+        val down = limitPrice(prev, panel.stocks[si].limitPct, up = false)
+        return open <= down + 0.001
     }
+
+    private fun limitPrice(prev: Double, pct: Double, up: Boolean): Double {
+        val raw = prev * (1.0 + (if (up) pct else -pct) / 100.0)
+        return round(raw * 100.0) / 100.0
+    }
+
+    /** 科创板/创业板前 5 日、主板/北交所前 2 日不设涨跌停（近似处理）。 */
+    private fun isNewListing(panel: Panel, si: Int, d: Int): Boolean {
+        val stock = panel.stocks[si]
+        val days = stock.listedDaysAt(panel.calendar[d]) ?: return false
+        return when (stock.board) {
+            Board.STAR, Board.CHINEXT -> days < 5
+            Board.SH_MAIN, Board.SZ_MAIN, Board.BSE -> days < 2
+            else -> false
+        }
+    }
+
+    private fun lotSize(board: Board): Long = if (board == Board.STAR) 200L else 100L
+
+    private fun buyFee(gross: Double, config: StrategyConfig): Double =
+        gross * (config.costBps + config.transferFeeBps) / 10_000.0
 }

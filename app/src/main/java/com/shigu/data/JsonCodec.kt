@@ -4,6 +4,7 @@ import com.shigu.core.Board
 import com.shigu.core.FactorKey
 import com.shigu.core.FactorWeight
 import com.shigu.core.OwnerType
+import com.shigu.core.ScoringMode
 import com.shigu.core.StStatus
 import com.shigu.core.StrategyConfig
 import com.shigu.core.StrategyFilters
@@ -27,6 +28,10 @@ object JsonCodec {
         o.put("lookbackDays", c.lookbackDays)
         o.put("universeSize", c.universeSize)
         o.put("costBps", c.costBps)
+        o.put("stampDutyBps", c.stampDutyBps)
+        o.put("slippageBps", c.slippageBps)
+        o.put("transferFeeBps", c.transferFeeBps)
+        o.put("scoring", c.scoring.name)
         o.put("builtin", c.builtin)
         o.put("createdAt", c.createdAt)
         val fs = JSONArray()
@@ -115,6 +120,11 @@ object JsonCodec {
             lookbackDays = o.optInt("lookbackDays", 500),
             universeSize = o.optInt("universeSize", 800),
             costBps = o.optDouble("costBps", 8.0),
+            stampDutyBps = o.optDouble("stampDutyBps", 5.0),
+            slippageBps = o.optDouble("slippageBps", 5.0),
+            transferFeeBps = o.optDouble("transferFeeBps", 0.1),
+            scoring = runCatching { ScoringMode.valueOf(o.optString("scoring", "ZSCORE")) }
+                .getOrDefault(ScoringMode.ZSCORE),
             builtin = o.optBoolean("builtin", false),
             createdAt = o.optLong("createdAt", 0L),
         )

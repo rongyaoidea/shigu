@@ -46,7 +46,7 @@ class EastmoneyApi(
         var page = 1
         while (page <= 90) {
             val url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/" +
-                "Market_Center.getHQNodeData?page=$page&num=100&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=page"
+                "Market_Center.getHQNodeData?page=$page&num=100&sort=symbol&asc=1&node=hs_a&symbol=&_s_r_a=page"
             val arr = JSONArray(get(url, referer = "https://finance.sina.com.cn/"))
             if (arr.length() == 0) break
             for (i in 0 until arr.length()) {
@@ -83,11 +83,10 @@ class EastmoneyApi(
                     change60 = null,
                     changeYtd = null,
                     stStatus = StStatus.fromName(name),
-                    suspended = (o.optString("trade").toDoubleOrNull() ?: 0.0) <= 0.0,
+                    suspended = isSuspended(o),
                     updatedAt = System.currentTimeMillis(),
                 )
             }
-            if (arr.length() < 100) break
             page++
             delay(60)
         }
@@ -96,7 +95,7 @@ class EastmoneyApi(
         var etfPage = 1
         while (etfPage <= 40) {
             val url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/" +
-                "Market_Center.getHQNodeData?page=$etfPage&num=100&sort=changepercent&asc=0&node=etf_hq_fund&symbol=&_s_r_a=page"
+                "Market_Center.getHQNodeData?page=$etfPage&num=100&sort=symbol&asc=1&node=etf_hq_fund&symbol=&_s_r_a=page"
             val arr = JSONArray(get(url, referer = "https://finance.sina.com.cn/"))
             if (arr.length() == 0) break
             for (i in 0 until arr.length()) {
@@ -133,11 +132,10 @@ class EastmoneyApi(
                     change60 = null,
                     changeYtd = null,
                     stStatus = StStatus.NORMAL,
-                    suspended = (o.optString("trade").toDoubleOrNull() ?: 0.0) <= 0.0,
+                    suspended = isSuspended(o),
                     updatedAt = System.currentTimeMillis(),
                 )
             }
-            if (arr.length() < 100) break
             etfPage++
             delay(60)
         }
@@ -146,7 +144,7 @@ class EastmoneyApi(
         var bjPage = 1
         while (bjPage <= 10) {
             val url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/" +
-                "Market_Center.getHQNodeData?page=$bjPage&num=100&sort=changepercent&asc=0&node=hs_bjs&symbol=&_s_r_a=page"
+                "Market_Center.getHQNodeData?page=$bjPage&num=100&sort=symbol&asc=1&node=hs_bjs&symbol=&_s_r_a=page"
             val arr = JSONArray(get(url, referer = "https://finance.sina.com.cn/"))
             if (arr.length() == 0) break
             for (i in 0 until arr.length()) {
@@ -179,11 +177,10 @@ class EastmoneyApi(
                     change60 = null,
                     changeYtd = null,
                     stStatus = StStatus.fromName(name),
-                    suspended = (o.optString("trade").toDoubleOrNull() ?: 0.0) <= 0.0,
+                    suspended = isSuspended(o),
                     updatedAt = System.currentTimeMillis(),
                 )
             }
-            if (arr.length() < 100) break
             bjPage++
             delay(60)
         }
@@ -208,7 +205,7 @@ class EastmoneyApi(
         if (symbol.startsWith("bj")) {
             return@withContext fetchSinaDailyBars(symbol, code, limit, floatShares)
         }
-        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=$symbol,day,,,$limit,qfq"
+        val url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=$symbol,day,,,$limit,qfq"
         val root = JSONObject(get(url, referer = "https://gu.qq.com/"))
         val node = root.optJSONObject("data")?.optJSONObject(symbol) ?: return@withContext emptyList()
         val arr = node.optJSONArray("qfqday") ?: node.optJSONArray("day") ?: JSONArray()
@@ -244,8 +241,16 @@ class EastmoneyApi(
         out
     }
 
-    suspend fun fetchBenchmark(limit: Int = 700): List<DailyBar> =
-        fetchDailyBars("sh000300", limit).map { it.copy(code = ShiguDb.BENCHMARK) }
+    suspend fun fetchBenchmark(limit: Int = 700): List<DailyBar> {
+        val tencent = runCatching { fetchDailyBars("sh000300", limit) }.getOrNull()
+        val bars = if (!tencent.isNullOrEmpty()) {
+            tencent
+        } else {
+            // 基准指数没有复权问题，腾讯失败时用新浪兜底，避免整个同步因基准失败。
+            runCatching { fetchSinaDailyBars("sh000300", ShiguDb.BENCHMARK, limit, 0.0) }.getOrDefault(emptyList())
+        }
+        return bars.map { it.copy(code = ShiguDb.BENCHMARK) }
+    }
 
     private fun fetchSinaDailyBars(
         symbol: String,
@@ -378,7 +383,7 @@ class EastmoneyApi(
         val out = ArrayList<FinanceProfile>(7000)
         fetchDataPages(
             reportName = "RPT_F10_FINANCE_MAINFINADATA",
-            columns = "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,REPORT_DATE,ROEJQ,XSMLL,XSJLL,TOTALOPERATEREVETZ,PARENTNETPROFITTZ,ZCFZL,EPSJB,BPS,MGJYXJJE",
+            columns = "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,REPORT_DATE,NOTICE_DATE,ROEJQ,XSMLL,XSJLL,TOTALOPERATEREVETZ,PARENTNETPROFITTZ,ZCFZL,EPSJB,BPS,MGJYXJJE",
             filter = "(REPORT_DATE='$reportDate')",
             sortColumns = "SECURITY_CODE",
             onProgress = onProgress,
@@ -390,6 +395,7 @@ class EastmoneyApi(
                 out += FinanceProfile(
                     code = code,
                     reportDate = o.optString("REPORT_DATE", reportDate).take(10),
+                    noticeDate = o.optString("NOTICE_DATE", "").take(10),
                     roe = o.d("ROEJQ"),
                     grossMargin = o.d("XSMLL"),
                     netMargin = o.d("XSJLL"),
@@ -532,6 +538,13 @@ class EastmoneyApi(
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun isSuspended(o: JSONObject): Boolean {
+        val price = o.optString("trade").toDoubleOrNull() ?: 0.0
+        val volume = o.optString("volume").toDoubleOrNull() ?: 0.0
+        val amount = o.optString("amount").toDoubleOrNull() ?: 0.0
+        return price <= 0.0 || (volume <= 0.0 && amount <= 0.0)
     }
 
     private fun boardOf(code: String, market: Int): Board = when {

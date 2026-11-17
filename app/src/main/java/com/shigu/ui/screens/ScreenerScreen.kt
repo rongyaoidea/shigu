@@ -54,16 +54,20 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.shigu.core.Board
 import com.shigu.core.FactorKey
+import com.shigu.core.FactorStats
 import com.shigu.core.FactorWeight
 import com.shigu.core.OwnerType
 import com.shigu.core.Pick
+import com.shigu.core.ScoringMode
 import com.shigu.core.StStatus
 import com.shigu.core.StrategyConfig
 import com.shigu.core.StrategyFilters
 import com.shigu.core.StrategyPresets
 import com.shigu.core.SyncState
+import com.shigu.core.formatPct
 import com.shigu.ui.UiState
 import com.shigu.ui.components.EmptyCard
+import com.shigu.ui.components.MetricCell
 import com.shigu.ui.components.MiniTag
 import com.shigu.ui.components.PaperPill
 import com.shigu.ui.components.SectionLabel
@@ -86,8 +90,10 @@ fun ScreenerScreen(
     onPreset: (String) -> Unit,
     onPool: (Int) -> Unit,
     onAssetFilter: (String) -> Unit,
-    onApplyFactors: (List<FactorWeight>, Int) -> Unit,
+    onApplyFactors: (List<FactorWeight>, Int, ScoringMode) -> Unit,
     onApplyFilters: (StrategyFilters) -> Unit,
+    onAnalyzeFactor: (FactorKey) -> Unit,
+    onCloseFactorStats: () -> Unit,
     onSaveStrategy: (StrategyConfig, String) -> Unit,
     onRun: () -> Unit,
     onQuickSync: () -> Unit,
@@ -263,10 +269,20 @@ fun ScreenerScreen(
         FactorPickerDialog(
             initial = state.screenConfig.factors,
             initialTopN = state.screenConfig.maxPositions,
-            onDismiss = { showFactor = false },
-            onApply = { factors, topN ->
+            initialScoring = state.screenConfig.scoring,
+            analytics = state.factorStats,
+            analyticsLoading = state.factorStatsLoading,
+            analyticsKey = state.factorStatsKey,
+            onAnalyze = onAnalyzeFactor,
+            onCloseAnalytics = onCloseFactorStats,
+            onDismiss = {
                 showFactor = false
-                onApplyFactors(factors, topN)
+                onCloseFactorStats()
+            },
+            onApply = { factors, topN, scoring ->
+                showFactor = false
+                onCloseFactorStats()
+                onApplyFactors(factors, topN, scoring)
             },
         )
     }
@@ -409,6 +425,20 @@ private fun PickCard(pick: Pick, onClick: () -> Unit) {
                         )
                     }
                 }
+                if (pick.contributions.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        pick.contributions.entries
+                            .sortedByDescending { kotlin.math.abs(it.value) }
+                            .take(3)
+                            .forEach { (k, v) ->
+                                Text(
+                                    "${k.shortLabel} ${if (v >= 0) "+" else ""}%.2f".format(v),
+                                    fontSize = 8.sp,
+                                    color = if (v >= 0) ShiguPalette.Up else ShiguPalette.Down,
+                                )
+                            }
+                    }
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
@@ -433,8 +463,14 @@ private fun PickCard(pick: Pick, onClick: () -> Unit) {
 fun FactorPickerDialog(
     initial: List<FactorWeight>,
     initialTopN: Int,
+    initialScoring: ScoringMode,
+    analytics: FactorStats?,
+    analyticsLoading: Boolean,
+    analyticsKey: FactorKey?,
+    onAnalyze: ((FactorKey) -> Unit)?,
+    onCloseAnalytics: () -> Unit,
     onDismiss: () -> Unit,
-    onApply: (List<FactorWeight>, Int) -> Unit,
+    onApply: (List<FactorWeight>, Int, ScoringMode) -> Unit,
 ) {
     val selected = remember {
         mutableStateMapOf<FactorKey, Double>().apply {
@@ -442,6 +478,14 @@ fun FactorPickerDialog(
         }
     }
     var topN by remember { mutableStateOf(initialTopN) }
+    var scoring by remember { mutableStateOf(initialScoring) }
+    var query by remember { mutableStateOf("") }
+    val filtered = FactorKey.entries.filter {
+        query.isBlank() ||
+            it.label.contains(query, ignoreCase = true) ||
+            it.shortLabel.contains(query, ignoreCase = true) ||
+            it.category.contains(query, ignoreCase = true)
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -459,13 +503,31 @@ fun FactorPickerDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("因子库 · ${FactorKey.entries.size} 个", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.weight(1f))
-                    Text("点选 / 调权重", fontSize = 9.sp, color = ShiguPalette.InkSoft)
+                    Text(
+                        "等权",
+                        fontSize = 9.sp,
+                        color = ShiguPalette.Ink,
+                        modifier = Modifier
+                            .clickable {
+                                val keys = selected.keys.toList()
+                                keys.forEach { selected[it] = 1.0 / keys.size.coerceAtLeast(1) }
+                            }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
                 }
                 Text(
-                    "越高越好的因子权重为正；越低越好的因子方向已内置。至少要选 1 个。",
+                    "越高越好的因子权重为正；越低越好的因子方向已内置。点“体检”看 Rank IC。",
                     fontSize = 9.sp,
                     color = ShiguPalette.InkSoft,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+                    modifier = Modifier.padding(top = 2.dp, bottom = 5.dp),
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("搜索因子 / 类别", fontSize = 10.sp) },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
                 )
                 SketchDivider(seed = "factor-dialog")
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -476,13 +538,28 @@ fun FactorPickerDialog(
                         Spacer(Modifier.width(5.dp))
                     }
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("打分", fontSize = 10.sp, color = ShiguPalette.InkSoft)
+                    Spacer(Modifier.width(6.dp))
+                    PaperPill("z-score", scoring == ScoringMode.ZSCORE, { scoring = ScoringMode.ZSCORE })
+                    Spacer(Modifier.width(5.dp))
+                    PaperPill("排名", scoring == ScoringMode.RANK, { scoring = ScoringMode.RANK })
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "已选 ${selected.size} · 合计 ${"%.0f".format(selected.values.sum() * 100)}%",
+                        fontSize = 8.sp,
+                        color = ShiguPalette.InkFaint,
+                    )
+                }
                 LazyColumn(
                     Modifier
-                        .heightIn(max = 430.dp)
+                        .heightIn(max = 380.dp)
                         .padding(top = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     FactorKey.categories.forEach { cat ->
+                        val list = filtered.filter { it.category == cat }
+                        if (list.isEmpty()) return@forEach
                         item(key = "cat_$cat") {
                             Text(
                                 cat,
@@ -492,7 +569,7 @@ fun FactorPickerDialog(
                                 modifier = Modifier.padding(top = 7.dp, bottom = 2.dp),
                             )
                         }
-                        items(FactorKey.entries.filter { it.category == cat }, key = { it.name }) { key ->
+                        items(list, key = { it.name }) { key ->
                             FactorRow(
                                 key = key,
                                 selected = selected.containsKey(key),
@@ -502,6 +579,7 @@ fun FactorPickerDialog(
                                     else selected[key] = 0.2
                                 },
                                 onWeight = { selected[key] = it },
+                                onAnalyze = onAnalyze?.let { analyze -> { analyze(key) } },
                             )
                         }
                     }
@@ -522,10 +600,11 @@ fun FactorPickerDialog(
                         SketchButton(
                             label = "应用 ${selected.size} 个因子",
                             onClick = {
+                                val total = selected.values.sum().coerceAtLeast(1e-9)
                                 val list = selected.entries
                                     .sortedByDescending { it.value }
-                                    .map { FactorWeight(it.key, it.value) }
-                                if (list.isNotEmpty()) onApply(list, topN)
+                                    .map { FactorWeight(it.key, it.value / total) }
+                                if (list.isNotEmpty()) onApply(list, topN, scoring)
                             },
                             enabled = selected.isNotEmpty(),
                         )
@@ -533,6 +612,15 @@ fun FactorPickerDialog(
                 }
             }
         }
+    }
+
+    if (analyticsKey != null) {
+        FactorStatsDialog(
+            key = analyticsKey,
+            stats = analytics,
+            loading = analyticsLoading,
+            onClose = onCloseAnalytics,
+        )
     }
 }
 
@@ -543,6 +631,7 @@ private fun FactorRow(
     weight: Double,
     onToggle: () -> Unit,
     onWeight: (Double) -> Unit,
+    onAnalyze: (() -> Unit)?,
 ) {
     Column(
         Modifier
@@ -583,6 +672,16 @@ private fun FactorRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (onAnalyze != null) {
+                Text(
+                    "体检",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier
+                        .clickable(onClick = onAnalyze)
+                        .padding(horizontal = 5.dp, vertical = 3.dp),
+                )
+            }
             if (selected) {
                 Text("${(weight * 100).toInt()}%", fontSize = 9.sp, color = ShiguPalette.InkSoft)
             }
@@ -600,7 +699,7 @@ private fun FactorRow(
                     Modifier
                         .size(20.dp)
                         .border(1.dp, ShiguPalette.InkFaint, RoundedCornerShape(4.dp))
-                        .clickable { onWeight((weight - 0.05).coerceAtLeast(0.05)) },
+                        .clickable { onWeight((weight - 0.05).coerceAtLeast(0.01)) },
                     contentAlignment = Alignment.Center,
                 ) { Text("−", fontSize = 12.sp, color = ShiguPalette.InkSoft) }
                 Text(
@@ -619,6 +718,80 @@ private fun FactorRow(
                         .clickable { onWeight((weight + 0.05).coerceAtMost(1.0)) },
                     contentAlignment = Alignment.Center,
                 ) { Text("+", fontSize = 12.sp, color = ShiguPalette.InkSoft) }
+            }
+        }
+    }
+}
+
+@Composable
+fun FactorPickerDialog(
+    initial: List<FactorWeight>,
+    initialTopN: Int,
+    onDismiss: () -> Unit,
+    onApply: (List<FactorWeight>, Int) -> Unit,
+) {
+    FactorPickerDialog(
+        initial = initial,
+        initialTopN = initialTopN,
+        initialScoring = ScoringMode.ZSCORE,
+        analytics = null,
+        analyticsLoading = false,
+        analyticsKey = null,
+        onAnalyze = null,
+        onCloseAnalytics = {},
+        onDismiss = onDismiss,
+        onApply = { factors, topN, _ -> onApply(factors, topN) },
+    )
+}
+
+@Composable
+private fun FactorStatsDialog(
+    key: FactorKey,
+    stats: FactorStats?,
+    loading: Boolean,
+    onClose: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = true),
+    ) {
+        Surface(color = ShiguPalette.Paper, shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("因子体检 · ${key.label}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("关闭", fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onClose))
+                }
+                Spacer(Modifier.height(6.dp))
+                if (loading) {
+                    Text("正在计算 Rank IC / 分层收益…", fontSize = 10.sp, color = ShiguPalette.InkSoft)
+                } else if (stats == null) {
+                    Text("样本不足，无法计算。至少需要 100 个交易日和 20 只股票。", fontSize = 10.sp, color = ShiguPalette.InkSoft)
+                } else {
+                    Text(
+                        "将来 ${stats.forwardDays} 日收益 · ${stats.sampleDays} 个截面 · 覆盖率 ${"%.0f".format(stats.coverage * 100)}%",
+                        fontSize = 8.5.sp,
+                        color = ShiguPalette.InkFaint,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        MetricCell("Rank IC", "%.3f".format(stats.meanIc), Modifier.weight(1f))
+                        MetricCell("ICIR", "%.2f".format(stats.icIr), Modifier.weight(1f))
+                        MetricCell("正 IC 比例", "%.0f%%".format(stats.positiveRate * 100), Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        MetricCell("Top-Bottom", formatPct(stats.decileSpread), Modifier.weight(1f))
+                        MetricCell("样本截面", "${stats.sampleDays}", Modifier.weight(1f))
+                        MetricCell("方向", if (key.higherIsBetter) "越高越好" else "越低越好", Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "IC 只说明历史截面相关性；快照因子（财务/企业性质）在历史区间是常数，结果不代表可交易收益。",
+                        fontSize = 8.sp,
+                        color = ShiguPalette.InkFaint,
+                    )
+                }
             }
         }
     }

@@ -8,11 +8,12 @@ import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
 import com.shigu.core.OwnerType
 import com.shigu.core.StStatus
+import com.shigu.core.StatusSnapshot
 import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 3) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -90,7 +91,7 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             CREATE TABLE paper_state(
                 strategy_id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, last_trade_date TEXT NOT NULL,
                 equity REAL NOT NULL, benchmark REAL NOT NULL, cash REAL NOT NULL,
-                holdings_json TEXT NOT NULL, last_change_json TEXT
+                holdings_json TEXT NOT NULL, last_change_json TEXT, trades_json TEXT
             )
             """.trimIndent(),
         )
@@ -103,6 +104,34 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX idx_paper_equity_strategy ON paper_equity(strategy_id, date)")
+        db.execSQL(
+            """
+            CREATE TABLE stock_status_history(
+                code TEXT NOT NULL, date TEXT NOT NULL, st_status TEXT NOT NULL,
+                owner_type TEXT NOT NULL, suspended INTEGER NOT NULL, listed_date TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(code, date)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX idx_status_history_date ON stock_status_history(date)")
+        db.execSQL(
+            """
+            CREATE TABLE stock_status_current(
+                code TEXT PRIMARY KEY, date TEXT NOT NULL, st_status TEXT NOT NULL,
+                owner_type TEXT NOT NULL, suspended INTEGER NOT NULL, listed_date TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE fundamentals_history(
+                code TEXT NOT NULL, report_date TEXT NOT NULL, notice_date TEXT NOT NULL DEFAULT '',
+                roe REAL, gross_margin REAL, net_margin REAL, revenue_growth REAL, profit_growth REAL,
+                debt_ratio REAL, eps REAL, bps REAL, ocfps REAL,
+                PRIMARY KEY(code, report_date)
+            )
+            """.trimIndent(),
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -166,6 +195,38 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             runCatching {
                 db.execSQL("UPDATE stocks SET suspended = CASE WHEN price <= 0 THEN 1 ELSE 0 END")
             }
+        }
+        // v4：纸面交易流水 + 时点状态快照（只记录变化，供未来无前视回测使用）。
+        if (oldVersion < 4) {
+            runCatching { db.execSQL("ALTER TABLE paper_state ADD COLUMN trades_json TEXT") }
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS stock_status_history(
+                    code TEXT NOT NULL, date TEXT NOT NULL, st_status TEXT NOT NULL,
+                    owner_type TEXT NOT NULL, suspended INTEGER NOT NULL, listed_date TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(code, date)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_status_history_date ON stock_status_history(date)")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS stock_status_current(
+                    code TEXT PRIMARY KEY, date TEXT NOT NULL, st_status TEXT NOT NULL,
+                    owner_type TEXT NOT NULL, suspended INTEGER NOT NULL, listed_date TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS fundamentals_history(
+                    code TEXT NOT NULL, report_date TEXT NOT NULL, notice_date TEXT NOT NULL DEFAULT '',
+                    roe REAL, gross_margin REAL, net_margin REAL, revenue_growth REAL, profit_growth REAL,
+                    debt_ratio REAL, eps REAL, bps REAL, ocfps REAL,
+                    PRIMARY KEY(code, report_date)
+                )
+                """.trimIndent(),
+            )
         }
     }
 
@@ -246,8 +307,7 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
     }
 
     /** 只写基础资料列，不动行情。 */
-    fun updateProfiles(profiles: List<StockProfile>, now: Long = System.currentTimeMillis()) {
-        if (profiles.isEmpty()) return
+    fun updateProfiles(profiles: List<StockProfile>, now: Long = System.currentTimeMillis()) {        if (profiles.isEmpty()) return
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -284,6 +344,38 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         }
     }
 
+    /** 财报历史：按报告期保存，未来用公告日做 as-of 回测。 */
+    fun upsertFundamentals(list: List<FinanceProfile>) {
+        if (list.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val st = db.compileStatement(
+                "INSERT OR REPLACE INTO fundamentals_history(code,report_date,notice_date,roe,gross_margin,net_margin," +
+                    "revenue_growth,profit_growth,debt_ratio,eps,bps,ocfps) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            )
+            list.forEach { p ->
+                st.clearBindings()
+                st.bindString(1, p.code)
+                st.bindString(2, p.reportDate)
+                st.bindString(3, p.noticeDate)
+                bindNullable(st, 4, p.roe)
+                bindNullable(st, 5, p.grossMargin)
+                bindNullable(st, 6, p.netMargin)
+                bindNullable(st, 7, p.revenueGrowth)
+                bindNullable(st, 8, p.profitGrowth)
+                bindNullable(st, 9, p.debtRatio)
+                bindNullable(st, 10, p.eps)
+                bindNullable(st, 11, p.bps)
+                bindNullable(st, 12, p.ocfps)
+                st.executeInsert()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun getStocks(): List<Stock> {
         val out = ArrayList<Stock>(6000)
         readableDatabase.rawQuery("SELECT * FROM stocks ORDER BY market_cap DESC", null).use { c ->
@@ -294,7 +386,9 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
 
     /** 用最新资产列表清理退市/改名/被剔除的旧代码；保留用户数据和日线文件，避免误删。 */
     fun pruneStocks(keepCodes: Collection<String>) {
+        val current = countStocks()
         if (keepCodes.size < 3000) return
+        if (current > 3000 && keepCodes.size < current * 0.98) return
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -483,6 +577,95 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
 
     fun countProfiles(): Long = scalar("SELECT COUNT(*) FROM stocks WHERE profile_updated_at > 0")
 
+    // ---------------- 时点状态 ----------------
+
+    /** 只记录发生变化的状态，避免每天 6k 行把库撑大。 */
+    fun recordStatusSnapshot(stocks: List<Stock>, date: String) {
+        if (stocks.isEmpty() || date.isBlank()) return
+        val current = HashMap<String, StatusSnapshot>(stocks.size)
+        readableDatabase.rawQuery(
+            "SELECT code,date,st_status,owner_type,suspended,listed_date FROM stock_status_current",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                val code = c.getString(0)
+                current[code] = StatusSnapshot(
+                    code = code,
+                    date = c.getString(1),
+                    stStatus = runCatching { StStatus.valueOf(c.getString(2)) }.getOrDefault(StStatus.NORMAL),
+                    ownerType = runCatching { OwnerType.valueOf(c.getString(3)) }.getOrDefault(OwnerType.UNKNOWN),
+                    suspended = c.getInt(4) == 1,
+                    listedDate = c.getString(5),
+                )
+            }
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val history = db.compileStatement(
+                "INSERT OR REPLACE INTO stock_status_history(code,date,st_status,owner_type,suspended,listed_date) VALUES(?,?,?,?,?,?)",
+            )
+            val latest = db.compileStatement(
+                "INSERT OR REPLACE INTO stock_status_current(code,date,st_status,owner_type,suspended,listed_date) VALUES(?,?,?,?,?,?)",
+            )
+            stocks.forEach { s ->
+                val prev = current[s.code]
+                val changed = prev == null ||
+                    prev.stStatus != s.stStatus ||
+                    prev.ownerType != s.ownerType ||
+                    prev.suspended != s.suspended ||
+                    prev.listedDate != s.listedDate
+                if (changed) {
+                    history.clearBindings()
+                    history.bindString(1, s.code)
+                    history.bindString(2, date)
+                    history.bindString(3, s.stStatus.name)
+                    history.bindString(4, s.ownerType.name)
+                    history.bindLong(5, if (s.suspended) 1 else 0)
+                    history.bindString(6, s.listedDate)
+                    history.executeInsert()
+                }
+                latest.clearBindings()
+                latest.bindString(1, s.code)
+                latest.bindString(2, date)
+                latest.bindString(3, s.stStatus.name)
+                latest.bindString(4, s.ownerType.name)
+                latest.bindLong(5, if (s.suspended) 1 else 0)
+                latest.bindString(6, s.listedDate)
+                latest.executeInsert()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getStatusHistory(codes: Collection<String>): Map<String, List<StatusSnapshot>> {
+        val out = HashMap<String, MutableList<StatusSnapshot>>()
+        if (codes.isEmpty()) return out
+        codes.chunked(400).forEach { chunk ->
+            val placeholders = chunk.joinToString(",") { "?" }
+            readableDatabase.rawQuery(
+                "SELECT code,date,st_status,owner_type,suspended,listed_date FROM stock_status_history " +
+                    "WHERE code IN ($placeholders) ORDER BY code,date",
+                chunk.toTypedArray(),
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val code = c.getString(0)
+                    out.getOrPut(code) { ArrayList() } += StatusSnapshot(
+                        code = code,
+                        date = c.getString(1),
+                        stStatus = runCatching { StStatus.valueOf(c.getString(2)) }.getOrDefault(StStatus.NORMAL),
+                        ownerType = runCatching { OwnerType.valueOf(c.getString(3)) }.getOrDefault(OwnerType.UNKNOWN),
+                        suspended = c.getInt(4) == 1,
+                        listedDate = c.getString(5),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
     fun lastTradeDate(): String {
         readableDatabase.rawQuery("SELECT MAX(date) FROM bars WHERE code=?", arrayOf(BENCHMARK)).use { c ->
             return if (c.moveToFirst() && !c.isNull(0)) c.getString(0) else ""
@@ -621,11 +804,12 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         val cash: Double,
         val holdingsJson: String,
         val lastChangeJson: String?,
+        val tradesJson: String?,
     )
 
     fun getPaperState(strategyId: String): PaperState? {
         readableDatabase.rawQuery(
-            "SELECT strategy_id,updated_at,last_trade_date,equity,benchmark,cash,holdings_json,last_change_json " +
+            "SELECT strategy_id,updated_at,last_trade_date,equity,benchmark,cash,holdings_json,last_change_json,trades_json " +
                 "FROM paper_state WHERE strategy_id=?",
             arrayOf(strategyId),
         ).use { c ->
@@ -639,6 +823,7 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 cash = c.getDouble(5),
                 holdingsJson = c.getString(6),
                 lastChangeJson = if (c.isNull(7)) null else c.getString(7),
+                tradesJson = if (c.isNull(8)) null else c.getString(8),
             )
         }
     }
@@ -652,11 +837,12 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         cash: Double,
         holdingsJson: String,
         lastChangeJson: String?,
+        tradesJson: String? = null,
     ) {
         writableDatabase.execSQL(
-            "INSERT OR REPLACE INTO paper_state(strategy_id,updated_at,last_trade_date,equity,benchmark,cash,holdings_json,last_change_json) " +
-                "VALUES(?,?,?,?,?,?,?,?)",
-            arrayOf<Any?>(strategyId, now, lastTradeDate, equity, benchmark, cash, holdingsJson, lastChangeJson),
+            "INSERT OR REPLACE INTO paper_state(strategy_id,updated_at,last_trade_date,equity,benchmark,cash,holdings_json,last_change_json,trades_json) " +
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>(strategyId, now, lastTradeDate, equity, benchmark, cash, holdingsJson, lastChangeJson, tradesJson),
         )
     }
 

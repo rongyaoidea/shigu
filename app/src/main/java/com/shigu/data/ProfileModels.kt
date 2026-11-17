@@ -20,6 +20,7 @@ data class HolderProfile(
 data class FinanceProfile(
     val code: String,
     val reportDate: String,
+    val noticeDate: String = "",
     val roe: Double?,
     val grossMargin: Double?,
     val netMargin: Double?,

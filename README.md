@@ -11,6 +11,11 @@
 
 - **资产池**：沪深主板、创业板、科创板、北交所、ETF；约 6,500+ 个代码（随数据源变化）。
 - **47 个因子**：RSRS 右偏/标准分/斜率/R²、LLT、均线趋势、距 20 日高、回撤、量价背离、换手/成交额稳定、球队硬币、隔夜距离、特质波动、MAX、偏度、峰度、Amihud、低波、Beta，以及传统动量/反转、当前 PE/PB/市值、上市天数、ROE、毛利率、净利率、营收/净利增速、资产负债率、EPS/BPS/每股经营现金流。
+- **因子研究**：
+  - z-score / 排名两种打分；
+  - 单因子“体检”：Rank IC、ICIR、正 IC 比例、Top-Bottom 十分位、覆盖率；
+  - 个股卡显示因子分数贡献（为什么是它）；
+  - 因子库支持搜索、分类、等权、权重归一化。
 - **基础过滤**：
   - 企业性质：央企 / 地方国企 / 民企 / 外资 / 无实控人 / 未知；
   - ST 状态：正常 / ST / *ST / 退市整理；
@@ -36,14 +41,20 @@
   - 策略按自己的调仓周期决定买入/卖出/继续持有；每天检查止损/止盈；
   - 有买卖时，策略卡出现**红色“调仓 · 买N 卖N”标志**，底部“策略/模拟”也出现红点；
   - 同时发本地通知（需授权）。
-- **回测**：收盘信号、次日开盘、整手 100 股、等权、初始资金 100 万、成本 8bps/边；含基准、超额、最大回撤、夏普、胜率、交易数、持仓。
-- **数据**：新浪资产列表 + 腾讯前复权日线；北交所走新浪不复权兜底；东方财富 F10 基础资料（企业性质/上市日期/最新报告期财务）批量分页；东方财富估值历史可选（可能限流）。
+- **回测**：收盘信号、次日开盘、整手 100 股（科创 200）、等权、初始资金 100 万、佣金 8bps + 卖出印花税 5bps + 过户费 + 滑点 5bps；含基准、超额、最大回撤、夏普、胜率、交易数、累计费用、持仓。
+- **调仓**：只卖出跌出目标的持仓；仍在目标里的继续持有，不再“全部卖出再买回”。
+- **纸面模拟**：创建后自动记录；净值曲线全量落库，最近 200 笔交易可查；模拟页显示组合纸面合计与平均收益。
+- **数据**：新浪资产列表（稳定 symbol 排序）+ 腾讯前复权日线（web.ifzq.gtimg.cn）；北交所走新浪不复权兜底；东方财富 F10 基础资料/财务/股东批量分页；东方财富估值历史可选（可能限流）。
+- **数据安全**：列表低于上次 98% 时停止清理；同步可取消；状态变化历史 + 财报历史开始按日/按报告期落库。
 
 ## 看设计
 
 - 早期设计说明（纸墨语言、tokens、6 屏概念稿）：`DESIGN.md`
 - 开源量化工具调研与信息架构：`docs/QUANT_UI_RESEARCH.md`
 - 数据与模拟口径：`docs/DATA_AND_SIMULATION.md`
+- 回测/纸面模拟假设：`docs/BACKTEST_ASSUMPTIONS.md`
+- 因子目录（47 个）：`docs/FACTOR_CATALOG.md`
+- 数据源与接口：`docs/DATA_SOURCES.md`
 - 实现状态 / 已验证项 / 缺口：`docs/STATUS.md`
 - 发布与 GitHub Secrets 签名：`docs/RELEASE_SIGNING.md`
 - 高保真设计稿：`design/mockups.html`
@@ -53,13 +64,18 @@
 - `design/screens/app-factors.png` 因子页（股票/ETF/全部、TopK、存为策略）
 - `design/screens/app-basic-filter.png` 基础过滤（企业性质/ST/上市天数/板块/价格流动性）
 - `design/screens/app-factor-picker.png` 因子库与权重步进
+- `design/screens/app-factor-picker-v2.png` 因子搜索、z-score/排名、等权、体检入口
+- `design/screens/app-factor-stats.png` 单因子体检（Rank IC/ICIR/分层）
 - `design/screens/app-strategies.png` 策略库（回测 + 创建后 + 编辑因子/持仓数）
 - `design/screens/app-simulation.png` 模拟页（创建后收益、目标持仓、详情）
+- `design/screens/app-simulation-v2.png` 组合纸面合计、调仓红标
 - `design/screens/app-paper-detail.png` 纸面净值/实际持仓详情
+- `design/screens/app-paper-detail-v2.png` 全量净值曲线 + 持仓
 - `design/screens/app-strategy-alert.png` 调仓红标（本地测试注入的持仓差异，用于验证 UI）
 - `design/screens/app-simulation-alert.png` 模拟页调仓提示（同上）
 - `design/screens/app-stock-profile.png` 个股页基础资料（企业性质/实控人/财务快照）
 - `design/screens/app-data-profile.png` 数据页基础资料覆盖与报告期
+- `design/screens/app-data-profile-v2.png` 数据页 6,469 资产、96.6K 日线、19.5MB
 - `design/icon-preview.png` 手绘 A 股票据图标（512/192/96/48/32 与圆形遮罩预览）
 
 ## 构建
@@ -105,7 +121,9 @@ app/src/main/java/com/shigu/
 - 估值历史来自东方财富，可能限流；价值类因子在历史回测中缺少数据会自动降权。
 - 企业性质是按实控人/第一大股东名称做的启发式分类，不是交易所或官方标签；F10 资料缺失时显示“未知”。
 - 财务因子是最新报告期快照；历史回测使用当前值，存在前视偏差，界面会显式警告。
-- ST / 停牌 / 上市天数 / 企业性质都是当前快照，历史回测同样有前视偏差。
+- ST / 停牌 / 上市天数 / 企业性质都是当前快照；已开始记录状态变化历史，但历史长度还不足以完全消除回测前视偏差。
+- 纸面模拟目前仍是“从创建日重跑”，已持久化全部净值点和最近 200 笔交易；还不是严格冻结的逐日账本。
+- 北交所日线不复权；成交额/换手为估算；尚未做行业中性、walk-forward、导出/导入。
 - 不接券商、不下单；“模拟”是纸面组合，不是实盘。
 
 ## 设计/研究参考

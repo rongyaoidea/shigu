@@ -11,13 +11,23 @@ android {
         ?.removePrefix("v")
         ?.takeIf { it.matches(Regex("\\d+(\\.\\d+){1,3}.*")) }
 
+    fun versionCodeOf(v: String?): Int? {
+        if (v.isNullOrBlank()) return null
+        val parts = v.split(".", "-", "+").take(3).mapNotNull { it.toIntOrNull() }
+        if (parts.isEmpty()) return null
+        val major = parts.getOrElse(0) { 0 }
+        val minor = parts.getOrElse(1) { 0 }
+        val patch = parts.getOrElse(2) { 0 }
+        return major * 10000 + minor * 100 + patch
+    }
+
     defaultConfig {
         applicationId = "com.shigu"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        // tag 发布：v0.1.0 → versionName 0.1.0；本地无 tag 时用默认版本。
-        versionName = tagVersion ?: "0.1.0"
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        // tag 发布：v0.2.0 → versionName 0.2.0，versionCode 200；单调递增，避免 run number 回退。
+        versionName = tagVersion ?: "0.3.0"
+        versionCode = versionCodeOf(tagVersion) ?: 300
     }
 
     signingConfigs {

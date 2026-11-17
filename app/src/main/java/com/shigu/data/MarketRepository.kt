@@ -3,7 +3,10 @@ package com.shigu.data
 import com.shigu.core.BacktestEngine
 import com.shigu.core.BacktestResult
 import com.shigu.core.Board
+import com.shigu.core.FactorAnalytics
 import com.shigu.core.FactorEngine
+import com.shigu.core.FactorKey
+import com.shigu.core.FactorStats
 import com.shigu.core.Panel
 import com.shigu.core.PanelBuilder
 import com.shigu.core.Pick
@@ -60,8 +63,19 @@ class MarketRepository(private val db: ShiguDb) {
         r.copy(picks = picks)
     }
 
-    suspend fun currentPicks(config: StrategyConfig): List<Pick> = withContext(Dispatchers.IO) {
+    suspend fun factorStats(config: StrategyConfig, key: FactorKey): FactorStats? = withContext(Dispatchers.IO) {
         val panel = loadPanel(
+            universeSize = 300,
+            lookbackDays = 400,
+            includeValuation = false,
+            fillCurrent = true,
+            maxStocks = 800,
+            boards = config.filters.boards,
+        )
+        FactorAnalytics.analyze(panel, key)
+    }
+
+    suspend fun currentPicks(config: StrategyConfig): List<Pick> = withContext(Dispatchers.IO) {        val panel = loadPanel(
             universeSize = config.universeSize,
             lookbackDays = 260,
             includeValuation = false,
@@ -80,7 +94,7 @@ class MarketRepository(private val db: ShiguDb) {
             val price = panel.close[s.stockIndex][i].takeIf { !it.isNaN() } ?: stock.price
             val prev = if (i > 0) panel.close[s.stockIndex][i - 1] else Double.NaN
             val chg = if (!prev.isNaN() && prev > 0) (price / prev - 1.0) * 100.0 else stock.changePct
-            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt)
+            Pick(stock.code, stock.name, price, chg, s.score, s.values, stock.board, stock.isSt, s.contributions)
         }
     }
 
@@ -120,6 +134,7 @@ class MarketRepository(private val db: ShiguDb) {
         val active = stocks.filter { (bars[it.code]?.size ?: 0) >= 60 }
         val activeCodes = active.map { it.code }
         val valuations = if (includeValuation) db.getValuationsForCodes(activeCodes, startDate) else emptyMap()
+        val statusHistory = db.getStatusHistory(activeCodes)
         return PanelBuilder.build(
             stocks = active,
             calendar = calendar,
@@ -127,6 +142,7 @@ class MarketRepository(private val db: ShiguDb) {
             valuationsByCode = valuations,
             benchmarkBars = benchmark,
             fillCurrentSnapshot = fillCurrent,
+            statusHistory = statusHistory,
         )
     }
 }
