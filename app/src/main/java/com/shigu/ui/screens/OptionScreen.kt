@@ -205,9 +205,13 @@ fun OptionScreen(vm: OptionViewModel = viewModel()) {
                         { vm.setOffset(offset) },
                     )
                 }
-                Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("张数", fontSize = 9.sp, color = ShiguPalette.InkSoft)
                 listOf(1, 2, 5).forEach { n -> PaperPill("$n", state.lots == n, { vm.setLots(n) }) }
+                Spacer(Modifier.weight(1f))
+                Text("每张 10,000 份", fontSize = 8.sp, color = ShiguPalette.InkFaint)
             }
             Spacer(Modifier.height(5.dp))
             val target = state.target
@@ -320,7 +324,12 @@ private fun OptionPaperCard(view: OptionPaperView, onDelete: () -> Unit) {
                     if (s.position == null) "空仓" else formatPct(view.pnlPct),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (s.position == null) ShiguPalette.InkSoft else if (view.pnl >= 0) ShiguPalette.Up else ShiguPalette.Down,
+                    color = when {
+                        s.position == null -> ShiguPalette.InkSoft
+                        view.pnl > 0 -> ShiguPalette.Up
+                        view.pnl < 0 -> ShiguPalette.Down
+                        else -> ShiguPalette.InkSoft
+                    },
                 )
                 Text(
                     if (s.position == null) "无持仓" else "¥%.0f".format(view.pnl),

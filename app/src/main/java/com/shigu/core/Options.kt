@@ -261,22 +261,29 @@ object OptionPaperEngine {
             entryDate = today,
         )
 
-        val (newPos, action) = when {
+        val newPos: OptionPosition?
+        val action: String
+        when {
             signal.direction == OptionDirection.NEUTRAL -> {
-                if (pos != null) null to "卖出平仓 · 信号中性" else null to "空仓 · 信号中性"
+                newPos = null
+                action = if (pos != null) "卖出平仓 · 信号中性" else "空仓 · 信号中性"
             }
             target == null -> {
-                if (pos != null) null to "卖出平仓 · 无可用合约" else null to "空仓 · 无可用合约"
+                newPos = null
+                action = if (pos != null) "卖出平仓 · 无可用合约" else "空仓 · 无可用合约"
             }
-            pos == null || expired || mustRoll || pos.contractCode != target.code -> {
-                val action = if (pos == null) {
-                    "买入 ${target.type.label} ${target.strike}"
-                } else {
-                    "卖出 ${pos.contractCode} · 买入 ${target.type.label} ${target.strike}"
-                }
-                buy(target) to action
+            pos == null -> {
+                newPos = buy(target)
+                action = "买入 ${target.type.label} ${target.strike}"
             }
-            else -> pos to "持有 ${pos.type.label} ${pos.strike}"
+            expired || mustRoll || pos.type != target.type -> {
+                newPos = buy(target)
+                action = "卖出 ${pos.contractCode} · 买入 ${target.type.label} ${target.strike}"
+            }
+            else -> {
+                newPos = pos
+                action = "持有 ${pos.type.label} ${pos.strike}"
+            }
         }
         return strategy.copy(
             lastDate = today,

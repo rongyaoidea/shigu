@@ -115,6 +115,17 @@ class OptionsTest {
     }
 
     @Test
+    fun `同方向不因平值漂移换合约`() {
+        val bull = OptionSignal(OptionDirection.BULL, 1.0, "2026-11-17", emptyList())
+        val bought = OptionPaperEngine.rebalance(emptyStrategy(), bull, contracts(), 3.0, "2026-11-17")
+        assertEquals("1003", bought.position!!.contractCode)
+
+        val drifted = OptionPaperEngine.rebalance(bought, bull, contracts(), 2.8, "2026-11-18")
+        assertEquals("1003", drifted.position!!.contractCode)
+        assertTrue(drifted.lastAction.startsWith("持有"))
+    }
+
+    @Test
     fun `只买期权，方向反转卖出旧仓再买新仓`() {
         val bull = OptionSignal(OptionDirection.BULL, 1.0, "2026-11-17", emptyList())
         val bear = OptionSignal(OptionDirection.BEAR, -1.0, "2026-11-18", emptyList())
