@@ -75,6 +75,7 @@ fun WatchScreen(
     onForceRefresh: () -> Unit,
     onOpenPaper: (StrategyConfig) -> Unit,
     onClosePaper: () -> Unit,
+    onOpenOptions: () -> Unit,
 ) {
     LaunchedEffect(Unit) {
         onWarm()
@@ -96,6 +97,25 @@ fun WatchScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        item {
+            SketchCard(
+                modifier = Modifier.clickable(onClick = onOpenOptions),
+                contentPadding = 12.dp,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("期权模拟", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "510050 / 510300 · 用 ETF 因子判断方向，只买 call/put",
+                            fontSize = 8.5.sp,
+                            color = ShiguPalette.InkSoft,
+                        )
+                    }
+                    Text("进入 →", fontSize = 9.sp, color = ShiguPalette.Ink)
+                }
+            }
+        }
+
         item {
             SketchCard(contentPadding = 12.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

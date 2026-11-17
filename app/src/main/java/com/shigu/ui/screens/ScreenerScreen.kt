@@ -554,6 +554,7 @@ fun FactorPickerDialog(
     correlationsLoading: Boolean = false,
     onCorrelations: () -> Unit = {},
     onCloseCorrelations: () -> Unit = {},
+    allowedKeys: Set<FactorKey>? = null,
     onDismiss: () -> Unit,
     onApply: (List<FactorWeight>, Int, ScoringMode) -> Unit,
 ) {
@@ -567,10 +568,13 @@ fun FactorPickerDialog(
     var query by remember { mutableStateOf("") }
     var showCorr by remember { mutableStateOf(false) }
     val filtered = FactorKey.entries.filter {
-        query.isBlank() ||
-            it.label.contains(query, ignoreCase = true) ||
-            it.shortLabel.contains(query, ignoreCase = true) ||
-            it.category.contains(query, ignoreCase = true)
+        (allowedKeys == null || it in allowedKeys) &&
+            (
+                query.isBlank() ||
+                    it.label.contains(query, ignoreCase = true) ||
+                    it.shortLabel.contains(query, ignoreCase = true) ||
+                    it.category.contains(query, ignoreCase = true)
+                )
     }
 
     Dialog(
@@ -587,7 +591,7 @@ fun FactorPickerDialog(
         ) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("因子库 · ${FactorKey.entries.size} 个", style = MaterialTheme.typography.titleMedium)
+                    Text("因子库 · ${allowedKeys?.size ?: FactorKey.entries.size} 个", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.weight(1f))
                     Text(
                         "等权",

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.shigu.ui.screens.BacktestScreen
 import com.shigu.ui.screens.DataScreen
+import com.shigu.ui.screens.OptionScreen
 import com.shigu.ui.screens.ScreenerScreen
 import com.shigu.ui.screens.StockScreen
 import com.shigu.ui.screens.WatchScreen
@@ -65,6 +67,7 @@ private val tabs = listOf(
     Tab("pick", "因子", "因子", "手动筛选 · 因子不是策略", Icons.Filled.FilterAlt),
     Tab("backtest", "策略", "策略", "内置 / 我的策略 · 回测 + 模拟", Icons.Filled.Assessment),
     Tab("watch", "模拟", "模拟", "策略模拟 + 个股观察", Icons.Filled.Visibility),
+    Tab("options", "期权", "期权模拟", "510050/510300 · 只买 call/put", Icons.Filled.ShowChart),
     Tab("data", "数据", "数据", "本地行情 · 延迟约 15 分钟", Icons.Filled.Storage),
 )
 
@@ -150,7 +153,11 @@ fun ShiguAppUi() {
                         onForceRefresh = vm::refreshPaperNow,
                         onOpenPaper = vm::loadPaperDetail,
                         onClosePaper = vm::clearPaperDetail,
+                        onOpenOptions = { nav.navigate("options") },
                     )
+                }
+                composable("options") {
+                    OptionScreen()
                 }
                 composable("data") {
                     DataScreen(

@@ -7,6 +7,8 @@ import com.shigu.core.Board
 import com.shigu.core.CustomFactor
 import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
+import com.shigu.core.OptionContract
+import com.shigu.core.OptionPaperStrategy
 import com.shigu.core.OwnerType
 import com.shigu.core.StStatus
 import com.shigu.core.StatusSnapshot
@@ -14,7 +16,7 @@ import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 5) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 6) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -142,6 +144,27 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             )
             """.trimIndent(),
         )
+        db.execSQL(
+            """
+            CREATE TABLE option_contracts(
+                code TEXT PRIMARY KEY, underlying TEXT NOT NULL, name TEXT NOT NULL,
+                option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
+                remaining_days INTEGER NOT NULL DEFAULT 0, last REAL NOT NULL DEFAULT 0,
+                change_pct REAL NOT NULL DEFAULT 0, volume REAL NOT NULL DEFAULT 0,
+                amount REAL NOT NULL DEFAULT 0, open_interest REAL NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE option_strategies(
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, underlying TEXT NOT NULL,
+                strategy_type TEXT NOT NULL, config_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -245,6 +268,29 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, expression TEXT NOT NULL,
                     higher_is_better INTEGER NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+        }
+        if (oldVersion < 6) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS option_contracts(
+                    code TEXT PRIMARY KEY, underlying TEXT NOT NULL, name TEXT NOT NULL,
+                    option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
+                    remaining_days INTEGER NOT NULL DEFAULT 0, last REAL NOT NULL DEFAULT 0,
+                    change_pct REAL NOT NULL DEFAULT 0, volume REAL NOT NULL DEFAULT 0,
+                    amount REAL NOT NULL DEFAULT 0, open_interest REAL NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS option_strategies(
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL, underlying TEXT NOT NULL,
+                    strategy_type TEXT NOT NULL, config_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0
                 )
                 """.trimIndent(),
             )
@@ -637,6 +683,101 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
 
     fun deleteCustomFactor(id: String) {
         writableDatabase.delete("custom_factors", "id=?", arrayOf(id))
+    }
+
+    // ---------------- 期权 ----------------
+
+    fun getOptionContracts(underlying: String? = null): List<OptionContract> {
+        val out = ArrayList<OptionContract>()
+        val sql = if (underlying == null) {
+            "SELECT code,underlying,name,option_type,strike,expiry,remaining_days,last,change_pct,volume,amount,open_interest,updated_at FROM option_contracts ORDER BY underlying,expiry,option_type,strike"
+        } else {
+            "SELECT code,underlying,name,option_type,strike,expiry,remaining_days,last,change_pct,volume,amount,open_interest,updated_at FROM option_contracts WHERE underlying=? ORDER BY expiry,option_type,strike"
+        }
+        readableDatabase.rawQuery(sql, if (underlying == null) null else arrayOf(underlying)).use { c ->
+            while (c.moveToNext()) {
+                out += OptionContract(
+                    code = c.getString(0),
+                    underlying = c.getString(1),
+                    name = c.getString(2),
+                    type = runCatching { com.shigu.core.OptionType.valueOf(c.getString(3)) }
+                        .getOrDefault(com.shigu.core.OptionType.CALL),
+                    strike = c.getDouble(4),
+                    expiry = c.getString(5),
+                    remainingDays = c.getInt(6),
+                    last = c.getDouble(7),
+                    changePct = c.getDouble(8),
+                    volume = c.getDouble(9),
+                    amount = c.getDouble(10),
+                    openInterest = c.getDouble(11),
+                    updatedAt = c.getLong(12),
+                )
+            }
+        }
+        return out
+    }
+
+    fun upsertOptionContracts(list: List<OptionContract>) {
+        if (list.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val st = db.compileStatement(
+                "INSERT OR REPLACE INTO option_contracts(code,underlying,name,option_type,strike,expiry,remaining_days,last,change_pct,volume,amount,open_interest,updated_at) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            )
+            list.forEach { o ->
+                st.clearBindings()
+                st.bindString(1, o.code)
+                st.bindString(2, o.underlying)
+                st.bindString(3, o.name)
+                st.bindString(4, o.type.name)
+                st.bindDouble(5, o.strike)
+                st.bindString(6, o.expiry)
+                st.bindLong(7, o.remainingDays.toLong())
+                st.bindDouble(8, o.last)
+                st.bindDouble(9, o.changePct)
+                st.bindDouble(10, o.volume)
+                st.bindDouble(11, o.amount)
+                st.bindDouble(12, o.openInterest)
+                st.bindLong(13, o.updatedAt)
+                st.executeInsert()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getOptionStrategies(): List<OptionPaperStrategy> {
+        val out = ArrayList<OptionPaperStrategy>()
+        readableDatabase.rawQuery(
+            "SELECT config_json FROM option_strategies WHERE closed=0 ORDER BY created_at DESC",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                OptionJsonCodec.decode(c.getString(0))?.let { out += it }
+            }
+        }
+        return out
+    }
+
+    fun upsertOptionStrategy(config: OptionPaperStrategy) {
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO option_strategies(id,name,underlying,strategy_type,config_json,created_at,closed) VALUES(?,?,?,?,?,?,0)",
+            arrayOf<Any?>(
+                config.id,
+                config.name,
+                config.underlying,
+                config.presetId,
+                OptionJsonCodec.encode(config),
+                config.createdAt,
+            ),
+        )
+    }
+
+    fun deleteOptionStrategy(id: String) {
+        writableDatabase.delete("option_strategies", "id=?", arrayOf(id))
     }
 
     // ---------------- 时点状态 ----------------
