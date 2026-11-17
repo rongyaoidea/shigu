@@ -139,6 +139,7 @@ fun ShiguAppUi() {
                         onOpenStock = { nav.navigate("stock/$it") },
                         onRemove = { vm.toggleWatch(it) },
                         onWarm = vm::refreshSimulations,
+                        onWarmSummaries = vm::warmSummaries,
                         onForceRefresh = { vm.refreshSimulations(force = true) },
                         onOpenPaper = vm::loadPaperDetail,
                         onClosePaper = vm::clearPaperDetail,
@@ -155,6 +156,8 @@ fun ShiguAppUi() {
                         onCancelSync = vm::cancelSync,
                         onAutoUpdate = vm::setAutoUpdate,
                         onDailyUniverse = vm::setDailyUniverse,
+                        onExportBackup = vm::exportBackup,
+                        onImportBackup = vm::importBackup,
                     )
                 }
                 composable("stock/{code}") { entry ->

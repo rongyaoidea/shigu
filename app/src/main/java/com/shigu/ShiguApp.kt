@@ -1,6 +1,7 @@
 package com.shigu
 
 import android.app.Application
+import com.shigu.data.BackupRepository
 import com.shigu.data.EastmoneyApi
 import com.shigu.data.MarketRepository
 import com.shigu.data.PaperRepository
@@ -25,6 +26,8 @@ class ShiguApp : Application() {
         private set
     lateinit var paper: PaperRepository
         private set
+    lateinit var backup: BackupRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +38,7 @@ class ShiguApp : Application() {
         market = MarketRepository(db)
         strategies = StrategyRepository(db, market)
         paper = PaperRepository(db, market)
+        backup = BackupRepository(db)
         strategies.ensureBuiltins()
         SyncScheduler.schedule(this, settings)
     }

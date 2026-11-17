@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.shigu.core.BacktestResult
 import com.shigu.core.Holding
 import com.shigu.core.PaperDetail
 import com.shigu.core.Trade
@@ -62,11 +63,15 @@ fun WatchScreen(
     onOpenStock: (String) -> Unit,
     onRemove: (String) -> Unit,
     onWarm: () -> Unit,
+    onWarmSummaries: () -> Unit,
     onForceRefresh: () -> Unit,
     onOpenPaper: (StrategyConfig) -> Unit,
     onClosePaper: () -> Unit,
 ) {
-    LaunchedEffect(Unit) { onWarm() }
+    LaunchedEffect(Unit) {
+        onWarm()
+        onWarmSummaries()
+    }
     val list = state.watchlist
     val changeMap = state.strategyChanges.associateBy { it.strategyId }
     val live = state.strategies.mapNotNull { state.since[it.id] }
@@ -168,6 +173,7 @@ fun WatchScreen(
                 StrategySimCard(
                     config = config,
                     since = state.since[config.id],
+                    summary = state.summaries[config.id] ?: state.backtests[config.id],
                     change = changeMap[config.id],
                     onOpenStock = onOpenStock,
                     onOpenPaper = { onOpenPaper(config) },
@@ -211,6 +217,7 @@ fun WatchScreen(
 private fun StrategySimCard(
     config: StrategyConfig,
     since: SinceCreationResult?,
+    summary: BacktestResult?,
     change: com.shigu.core.StrategyChange?,
     onOpenStock: (String) -> Unit,
     onOpenPaper: () -> Unit,
@@ -233,10 +240,48 @@ private fun StrategySimCard(
                     color = ShiguPalette.InkSoft,
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "详情 →",
+                fontSize = 8.sp,
+                color = ShiguPalette.InkSoft,
+                modifier = Modifier
+                    .clickable(onClick = onOpenPaper)
+                    .padding(start = 6.dp, top = 4.dp, bottom = 4.dp),
+            )
+        }
+        Spacer(Modifier.height(5.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("回测", fontSize = 8.sp, color = ShiguPalette.InkSoft)
+                Text(
+                    summary?.let { formatPct(it.stats.totalReturn) } ?: "待算",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = changeColor(summary?.stats?.totalReturn ?: 0.0),
+                )
+                Text(
+                    summary?.let {
+                        val years = (it.config.lookbackDays / 250).coerceAtLeast(1)
+                        "${years}年 · ${it.config.universeSize}池"
+                    } ?: "未运行",
+                    fontSize = 7.5.sp,
+                    color = ShiguPalette.InkFaint,
+                )
+            }
+            Column(
+                Modifier.width(58.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("创建", fontSize = 7.sp, color = ShiguPalette.InkFaint)
+                Text(shortDate(config.createdAt), fontSize = 8.5.sp, color = ShiguPalette.InkSoft, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(2.dp))
+                Box(Modifier.width(1.dp).height(20.dp).background(ShiguPalette.InkFaint))
+            }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                Text("创建后", fontSize = 8.sp, color = ShiguPalette.InkSoft)
                 Text(
                     since?.let { formatPct(it.returnPct) } ?: "计算中…",
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = changeColor(since?.returnPct ?: 0.0),
                 )
@@ -244,12 +289,6 @@ private fun StrategySimCard(
                     since?.let { "基准 ${formatPct(it.benchmarkPct)} · ${it.points} 点" } ?: "等待数据",
                     fontSize = 7.5.sp,
                     color = ShiguPalette.InkFaint,
-                )
-                Text(
-                    "详情 →",
-                    fontSize = 8.sp,
-                    color = ShiguPalette.InkSoft,
-                    modifier = Modifier.clickable(onClick = onOpenPaper),
                 )
             }
         }

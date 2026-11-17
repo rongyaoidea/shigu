@@ -35,6 +35,7 @@
 - 模拟页：
   - 所有策略的创建后收益、目标持仓/实际持仓；
   - 组合纸面合计、平均收益；
+  - 策略卡同时显示“回测收益（过去 1 年 / 300 池）”和“创建后纸面收益”，创建日为中间分割线；
   - “今日调仓”汇总；
   - 底部“策略/模拟”红点。
 - 每日 16:10 WorkManager 同步 → 策略重算 → 纸面持仓对比 → 本地通知。
@@ -48,7 +49,9 @@
   - 最近 200 笔交易流水（含费用）；
   - 顶部“立即核对 →”可手动触发一次纸面组合重算。
 - 数据安全：新列表 < 上次 98% 时停止清理；同步可取消；状态变化只在变化时写历史。
-- 构建：`versionCode` 从语义化 tag 推导（v0.3.0 → 300），不再用 GitHub run number。
+- 备份：数据页可导出/导入自定义策略与观察池（剪贴板 JSON，不含行情/净值）。
+- 性能：Panel 按数据版本缓存，因子值/截面因子在 Panel 内缓存；同一批策略刷新复用面板。
+- 构建：`versionCode` 从语义化 tag 推导（v0.3.1 → 301），不再用 GitHub run number。
 - 因子页与策略页分离；因子页有“存为策略”；策略页有“去因子页组策略”。
 - 单元测试：`BacktestEngineTest` 验证回测产生交易/持仓、现金不为负、调仓不卖回、费用记录；`OwnershipClassifierTest` 覆盖企业性质与 ST；`FactorFilterTest` 覆盖企业性质/ST/上市天数/停牌过滤。
 
@@ -60,9 +63,11 @@
 - `design/screens/app-factor-stats.png`：Rank IC 0.040、ICIR 1.67、Top-Bottom +1.17%（RSRS，43 截面）。
 - `design/screens/app-data-profile.png`：基础资料 5,579 只、报告期 2026-09-30。
 - `design/screens/app-data-profile-v2.png`：6,469 资产、96.6K 日线、19.5MB。
+- `design/screens/app-backup.png`：导出策略/观察到剪贴板的备份卡。
 - `design/screens/app-stock-profile.png`：央企徽标、实控人/第一大股东/上市天数、ROE/毛利率/净利率。
 - `design/screens/app-strategies.png`：策略卡、回测、创建后。
 - `design/screens/app-simulation-v2.png`：组合纸面合计、调仓红标。
+- `design/screens/app-strategy-return-split.png`：策略卡回测 +52.80%、创建 09-30 分割线、创建后 -1.68%。
 - `design/screens/app-paper-detail-v2.png`：29 点净值曲线 + 实际持仓。
 - `design/screens/app-strategy-alert.png`：本地测试注入持仓差异后，策略卡红色调仓标志。
 - `design/screens/app-simulation-alert.png`：模拟页“今日调仓”和红标。

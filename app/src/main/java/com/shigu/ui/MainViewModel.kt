@@ -76,6 +76,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val market = shigu.market
     private val repo = shigu.strategies
     private val paper = shigu.paper
+    private val backup = shigu.backup
     private val syncManager = shigu.syncManager
     private val settings = shigu.settings
 
@@ -133,6 +134,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun fullSync() = startSync(SyncMode.FULL, Universe.ALL)
     fun valuationSync() = startValuationSync(Universe.TOP_800)
     fun cancelSync() = syncManager.cancel()
+
+    fun exportBackup(): String = backup.exportJson()
+
+    fun importBackup(json: String) {
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { backup.importJson(json) } }
+            val stats = r.getOrNull()
+            if (stats != null) {
+                _state.update {
+                    it.copy(message = "已导入 ${stats.strategies} 个策略 · ${stats.watchlist} 只观察")
+                }
+                refreshLocal()
+            } else {
+                _state.update { it.copy(message = "导入失败：${r.exceptionOrNull()?.message ?: "格式不正确"}") }
+            }
+        }
+    }
 
     /** 企业性质/上市日期/财务快照；不跟行情同步绑定，避免每次更新都多打几十个请求。 */
     fun profileSync() {
@@ -375,6 +393,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     selectedStrategyId = updated.id,
                     since = it.since - updated.id,
                     strategyChanges = it.strategyChanges.filterNot { c -> c.strategyId == updated.id },
+                    summaries = it.summaries - updated.id,
                     message = "已更新 ${updated.name}，模拟从今天重置",
                 )
             }
@@ -406,6 +425,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     selectedStrategyId = strategies.firstOrNull()?.id,
                     backtests = it.backtests - id,
                     since = it.since - id,
+                    summaries = it.summaries - id,
                 )
             }
         }

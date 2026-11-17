@@ -24,9 +24,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import com.shigu.core.FactorKey
 import com.shigu.core.StrategyPresets
 import com.shigu.core.Universe
@@ -51,9 +55,12 @@ fun DataScreen(
     onCancelSync: () -> Unit,
     onAutoUpdate: (Boolean) -> Unit,
     onDailyUniverse: (Universe) -> Unit,
+    onExportBackup: () -> String,
+    onImportBackup: (String) -> Unit,
 ) {
     val stats = state.stats
     val sync = state.sync
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -131,6 +138,35 @@ fun DataScreen(
                 SyncButton("估值历史 · 回测池前800", "PE/PB/市值，价值因子回测用", onValuation)
                 Spacer(Modifier.height(7.dp))
                 SyncButton("基础资料 · 企业性质/ST/财务", "东方财富 F10 批量分页，约 1–2 分钟", onProfile)
+            }
+        }
+
+        item { SectionLabel("备份", trailing = "策略 / 观察池 · 剪贴板") }
+
+        item {
+            SketchCard(contentPadding = 12.dp) {
+                SyncButton("导出策略 / 观察", "生成 JSON 并复制到剪贴板", {
+                    val json = onExportBackup()
+                    val clipboard = context.getSystemService(ClipboardManager::class.java)
+                    clipboard?.setPrimaryClip(ClipData.newPlainText("shigu-backup", json))
+                    Toast.makeText(context, "备份已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                })
+                Spacer(Modifier.height(7.dp))
+                SyncButton("从剪贴板导入", "合并自定义策略与观察；同名策略覆盖", {
+                    val text = context.getSystemService(ClipboardManager::class.java)
+                        ?.primaryClip?.getItemAt(0)?.text?.toString()
+                    if (text.isNullOrBlank()) {
+                        Toast.makeText(context, "剪贴板没有备份 JSON", Toast.LENGTH_SHORT).show()
+                    } else {
+                        onImportBackup(text)
+                    }
+                })
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "只备份自定义策略和观察池，不含行情、估值、纸面净值；内置策略不会重复导入。",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkFaint,
+                )
             }
         }
 

@@ -21,6 +21,9 @@ import java.time.temporal.ChronoUnit
 
 class MarketRepository(private val db: ShiguDb) {
 
+    private var cachedKey: String? = null
+    private var cachedPanel: Panel? = null
+
     suspend fun screen(config: StrategyConfig): ScreenerResult = withContext(Dispatchers.IO) {
         val panel = loadPanel(
             universeSize = config.universeSize,
@@ -106,6 +109,13 @@ class MarketRepository(private val db: ShiguDb) {
         maxStocks: Int = 1200,
         boards: Set<Board> = com.shigu.core.StrategyFilters().boards,
     ): Panel {
+        val cacheKey = buildString {
+            append(universeSize).append('|').append(lookbackDays).append('|')
+            append(includeValuation).append('|').append(fillCurrent).append('|').append(maxStocks).append('|')
+            append(boards.map { it.name }.sorted().joinToString(",")).append('|')
+            append(db.getMeta("last_sync")).append('|').append(db.getMeta("profile_sync"))
+        }
+        cachedPanel?.let { if (cachedKey == cacheKey) return it }
         val benchmark = db.getBenchmarkBars(lookbackDays + 320)
         if (benchmark.size < 80) error("本地没有足够的沪深300数据，请先在数据页同步")
         val calendar = benchmark.map { it.date }.takeLast(lookbackDays + 260)
@@ -135,7 +145,7 @@ class MarketRepository(private val db: ShiguDb) {
         val activeCodes = active.map { it.code }
         val valuations = if (includeValuation) db.getValuationsForCodes(activeCodes, startDate) else emptyMap()
         val statusHistory = db.getStatusHistory(activeCodes)
-        return PanelBuilder.build(
+        val panel = PanelBuilder.build(
             stocks = active,
             calendar = calendar,
             barsByCode = bars.filterKeys { it in activeCodes },
@@ -144,5 +154,8 @@ class MarketRepository(private val db: ShiguDb) {
             fillCurrentSnapshot = fillCurrent,
             statusHistory = statusHistory,
         )
+        cachedKey = cacheKey
+        cachedPanel = panel
+        return panel
     }
 }

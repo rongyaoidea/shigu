@@ -44,8 +44,11 @@
 - **回测**：收盘信号、次日开盘、整手 100 股（科创 200）、等权、初始资金 100 万、佣金 8bps + 卖出印花税 5bps + 过户费 + 滑点 5bps；含基准、超额、最大回撤、夏普、胜率、交易数、累计费用、持仓。
 - **调仓**：只卖出跌出目标的持仓；仍在目标里的继续持有，不再“全部卖出再买回”。
 - **纸面模拟**：创建后自动记录；净值曲线全量落库，最近 200 笔交易可查；模拟页显示组合纸面合计与平均收益。
+- **策略卡双收益**：同一张卡同时显示“回测收益（过去 1 年 / 300 池）”和“创建后纸面收益”，以创建日作为中间分割线；避免只看回测或只看模拟。
 - **数据**：新浪资产列表（稳定 symbol 排序）+ 腾讯前复权日线（web.ifzq.gtimg.cn）；北交所走新浪不复权兜底；东方财富 F10 基础资料/财务/股东批量分页；东方财富估值历史可选（可能限流）。
+- **性能**：Panel 与因子值/截面因子按数据版本缓存；同一批策略刷新时复用，不再为每个策略重查 70–90MB 的面板。
 - **数据安全**：列表低于上次 98% 时停止清理；同步可取消；状态变化历史 + 财报历史开始按日/按报告期落库。
+- **备份**：数据页可把自定义策略/观察池导出为 JSON 复制到剪贴板，也可从剪贴板导入；不含行情/估值/纸面净值。
 
 ## 看设计
 
@@ -69,6 +72,7 @@
 - `design/screens/app-strategies.png` 策略库（回测 + 创建后 + 编辑因子/持仓数）
 - `design/screens/app-simulation.png` 模拟页（创建后收益、目标持仓、详情）
 - `design/screens/app-simulation-v2.png` 组合纸面合计、调仓红标
+- `design/screens/app-strategy-return-split.png` 策略卡：回测收益 / 创建日分割线 / 创建后收益
 - `design/screens/app-paper-detail.png` 纸面净值/实际持仓详情
 - `design/screens/app-paper-detail-v2.png` 全量净值曲线 + 持仓
 - `design/screens/app-strategy-alert.png` 调仓红标（本地测试注入的持仓差异，用于验证 UI）
@@ -76,6 +80,7 @@
 - `design/screens/app-stock-profile.png` 个股页基础资料（企业性质/实控人/财务快照）
 - `design/screens/app-data-profile.png` 数据页基础资料覆盖与报告期
 - `design/screens/app-data-profile-v2.png` 数据页 6,469 资产、96.6K 日线、19.5MB
+- `design/screens/app-backup.png` 数据页备份：导出策略/观察到剪贴板
 - `design/icon-preview.png` 手绘 A 股票据图标（512/192/96/48/32 与圆形遮罩预览）
 
 ## 构建
