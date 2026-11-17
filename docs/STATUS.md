@@ -1,10 +1,10 @@
 # 实现状态（2026-11-17）
 
 > GitHub 仓库：https://github.com/rongyaoidea/shigu （public）
-> v0.3.0 Release 已由 GitHub Actions 用仓库 Secrets 中的 release keystore 签名并发布：
-> https://github.com/rongyaoidea/shigu/releases/tag/v0.3.0
-> v0.2.0 增加手绘图标、基础因子与企业性质/ST/财务过滤；v0.3.0 增加成本/调仓修复、因子体检、排名打分、组合纸面、状态/财报历史与数据健壮性。
-> APK SHA-256：`86690333770b3a099d40f9cc9c25f0bfcbeeedc60212e6d4f036c8c51004448e`
+> v0.3.1 Release 已由 GitHub Actions 用仓库 Secrets 中的 release keystore 签名并发布：
+> https://github.com/rongyaoidea/shigu/releases/tag/v0.3.1
+> v0.3.0 增加成本/调仓修复、因子体检、排名打分、组合纸面、状态/财报历史与数据健壮性；v0.3.1 增加策略卡回测/模拟双收益、剪贴板备份、面板缓存。
+> APK SHA-256：`57c704bcfffb0b1e6035b040bb3652de5bc45f3a390b4f3380771ae6441d906f`
 
 ## 已完成并验证
 
