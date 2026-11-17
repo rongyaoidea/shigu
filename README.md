@@ -4,8 +4,8 @@
 > 仅自用，不接券商、不荐股、不构成投资建议。
 >
 > 仓库：https://github.com/rongyaoidea/shigu （public）
-> Release：https://github.com/rongyaoidea/shigu/releases/tag/v0.4.0
-> v0.4.0 APK SHA-256：`5046b151088945f578622c1a449adddb15f02113b34a8af13be525198679ad6a`
+> Release：https://github.com/rongyaoidea/shigu/releases/tag/v0.5.0
+> v0.5.0 APK SHA-256：`13abd1fa0c15bed800469caa3bc9efcdeb4b2ca5e5b17bc48ceff91f1dda9ce2`
 
 ## 现在有什么
 

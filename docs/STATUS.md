@@ -1,10 +1,10 @@
 # 实现状态（2026-11-17）
 
 > GitHub 仓库：https://github.com/rongyaoidea/shigu （public）
-> v0.4.0 Release 已由 GitHub Actions 用仓库 Secrets 中的 release keystore 签名并发布：
-> https://github.com/rongyaoidea/shigu/releases/tag/v0.4.0
-> v0.3.1 增加策略卡回测/模拟双收益、剪贴板备份、面板缓存；v0.4.0 增加筛选漏斗、组合层、策略对比、调仓预览与数据质量标记。
-> APK SHA-256：`5046b151088945f578622c1a449adddb15f02113b34a8af13be525198679ad6a`
+> v0.5.0 Release 已由 GitHub Actions 用仓库 Secrets 中的 release keystore 签名并发布：
+> https://github.com/rongyaoidea/shigu/releases/tag/v0.5.0
+> v0.4.0 增加筛选漏斗、组合层、策略对比、调仓预览与数据质量；v0.5.0 增加自定义因子公式、因子相关性、纸面“同步+核对”。
+> APK SHA-256：`13abd1fa0c15bed800469caa3bc9efcdeb4b2ca5e5b17bc48ceff91f1dda9ce2`
 
 ## 已完成并验证
 
