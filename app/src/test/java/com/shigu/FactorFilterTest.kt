@@ -6,6 +6,7 @@ import com.shigu.core.FactorKey
 import com.shigu.core.FactorWeight
 import com.shigu.core.OwnerType
 import com.shigu.core.Panel
+import com.shigu.core.ScreenerEngine
 import com.shigu.core.StStatus
 import com.shigu.core.Stock
 import com.shigu.core.StrategyConfig
@@ -142,5 +143,28 @@ class FactorFilterTest {
     fun `财务因子读取股票快照`() {
         val panel = panel()
         assertEquals(12.0, FactorEngine.value(panel, 0, panel.lastIndex, FactorKey.ROE)!!, 1e-9)
+    }
+
+    @Test
+    fun `筛选漏斗单调递减且覆盖全池`() {
+        val panel = panel()
+        val result = ScreenerEngine.screen(
+            panel,
+            config(
+                StrategyFilters(
+                    owners = setOf(OwnerType.CENTRAL_SOE),
+                    stStatuses = setOf(StStatus.NORMAL),
+                    minListedDays = 100,
+                    excludeSuspended = true,
+                    excludeSt = true,
+                ),
+            ),
+        )
+        assertTrue(result.funnel.isNotEmpty())
+        assertEquals(panel.stocks.size, result.funnel.first().remaining)
+        result.funnel.zipWithNext().forEach { (a, b) ->
+            assertTrue("${a.label} -> ${b.label}: ${a.remaining} -> ${b.remaining}", b.remaining <= a.remaining)
+        }
+        assertEquals(1, result.rows.size)
     }
 }

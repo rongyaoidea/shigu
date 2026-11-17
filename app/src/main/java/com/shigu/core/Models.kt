@@ -172,6 +172,7 @@ data class StrategyFilters(
     val owners: Set<OwnerType> = OwnerType.entries.toSet(),
     val minListedDays: Int = 0,
     val excludeSuspended: Boolean = false,
+    val requireProfile: Boolean = false,
     val boards: Set<Board> = setOf(Board.SH_MAIN, Board.SZ_MAIN, Board.CHINEXT, Board.STAR, Board.BSE, Board.ETF),
 ) {
     val isDefault: Boolean
@@ -335,6 +336,7 @@ data class ScreenerResult(
     val totalCandidates: Int,
     val poolSize: Int,
     val factorValues: Map<FactorKey, Double> = emptyMap(),
+    val funnel: List<FunnelStep> = emptyList(),
 )
 
 /** 时点状态快照：只在状态变化时写历史，供未来无前视回测使用。 */
@@ -393,6 +395,9 @@ data class DataStats(
     val dbBytes: Long = 0,
     val profileCount: Int = 0,
     val profileReportDate: String = "",
+    val bseCount: Int = 0,
+    val stCount: Int = 0,
+    val suspendedCount: Int = 0,
 )
 
 fun listedDaysBetween(listedDate: String, date: String): Int? {

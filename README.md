@@ -16,6 +16,11 @@
   - 单因子“体检”：Rank IC、ICIR、正 IC 比例、Top-Bottom 十分位、覆盖率；
   - 个股卡显示因子分数贡献（为什么是它）；
   - 因子库支持搜索、分类、等权、权重归一化。
+- **筛选漏斗**：从全池到命中，逐步显示板块、价格/流动性、ST/停牌、企业性质、上市天数、估值/市值、资料完整、因子覆盖、TopK 截断的淘汰数量与原因。
+- **组合层**：按每个策略 100 万名义本金合并，显示组合纸面、收益、现金、Top 10 合并持仓、重叠持仓、最大单票、策略日收益相关性。
+- **策略对比**：勾选 2–4 个策略，对比回测/创建后收益、回撤、夏普、交易数、费用和共同持仓数。
+- **调仓预览**：按当前目标 TopK、等权、整手、收盘价估算买入/卖出清单、金额、费用和换手；实际以调仓日开盘为准。
+- **数据质量**：个股页标记“北交所不复权 / 停牌 / 资料未同步”，数据页显示北交所/ST/停牌数量；基础过滤可勾“只看资料完整”。
 - **基础过滤**：
   - 企业性质：央企 / 地方国企 / 民企 / 外资 / 无实控人 / 未知；
   - ST 状态：正常 / ST / *ST / 退市整理；
@@ -73,6 +78,10 @@
 - `design/screens/app-simulation.png` 模拟页（创建后收益、目标持仓、详情）
 - `design/screens/app-simulation-v2.png` 组合纸面合计、调仓红标
 - `design/screens/app-strategy-return-split.png` 策略卡：回测收益 / 创建日分割线 / 创建后收益
+- `design/screens/app-funnel.png` 筛选漏斗（全池 → 价格/流动性 → 因子覆盖 → 命中）
+- `design/screens/app-portfolio.png` 组合层：合并持仓、重叠、策略相关性
+- `design/screens/app-rebalance-preview.png` 调仓预览：买卖清单、金额、费用、换手
+- `design/screens/app-strategy-compare.png` 策略对比：回测/创建后/回撤/夏普/费用
 - `design/screens/app-paper-detail.png` 纸面净值/实际持仓详情
 - `design/screens/app-paper-detail-v2.png` 全量净值曲线 + 持仓
 - `design/screens/app-strategy-alert.png` 调仓红标（本地测试注入的持仓差异，用于验证 UI）

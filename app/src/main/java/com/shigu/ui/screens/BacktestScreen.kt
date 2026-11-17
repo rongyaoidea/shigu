@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -27,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,12 +38,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.shigu.core.BacktestResult
 import com.shigu.core.FactorWeight
 import com.shigu.core.OwnerType
@@ -55,6 +64,7 @@ import com.shigu.ui.components.EquityChart
 import com.shigu.ui.components.MetricCell
 import com.shigu.ui.components.PaperPill
 import com.shigu.ui.components.SectionLabel
+import com.shigu.ui.components.changeColor
 import com.shigu.ui.components.scoreText
 import com.shigu.ui.components.shortDate
 import com.shigu.ui.sketch.SketchButton
@@ -91,6 +101,7 @@ fun BacktestScreen(
     var showFactor by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
+    var showCompare by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -110,12 +121,22 @@ fun BacktestScreen(
                 if (state.summaryLoading) {
                     Text("概览 ${state.summaryDone}/${state.summaryTotal}", fontSize = 9.sp, color = ShiguPalette.InkSoft)
                 } else {
-                    Text(
-                        "去因子页组策略 →",
-                        fontSize = 9.sp,
-                        color = ShiguPalette.Ink,
-                        modifier = Modifier.clickable(onClick = onGoFactors),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "对比 →",
+                            fontSize = 9.sp,
+                            color = ShiguPalette.InkSoft,
+                            modifier = Modifier
+                                .clickable { showCompare = true }
+                                .padding(end = 8.dp),
+                        )
+                        Text(
+                            "去因子页组策略 →",
+                            fontSize = 9.sp,
+                            color = ShiguPalette.Ink,
+                            modifier = Modifier.clickable(onClick = onGoFactors),
+                        )
+                    }
                 }
             }
         }
@@ -346,6 +367,10 @@ fun BacktestScreen(
         )
     }
 
+    if (showCompare) {
+        CompareDialog(state = state, onDismiss = { showCompare = false })
+    }
+
     if (showFactor) {
         FactorPickerDialog(
             initial = editFactors,
@@ -357,6 +382,104 @@ fun BacktestScreen(
                 positions = topN
             },
         )
+    }
+}
+
+@Composable
+private fun CompareDialog(state: UiState, onDismiss: () -> Unit) {
+    var selectedIds by remember {
+        mutableStateOf(state.strategies.take(2).map { it.id }.toSet())
+    }
+    val selected = state.strategies.filter { it.id in selectedIds }
+    val holdingSets = selected.mapNotNull { cfg ->
+        state.since[cfg.id]?.portfolio?.holdings?.map { it.code }?.toSet()
+    }
+    val overlap = if (holdingSets.size >= 2) {
+        holdingSets.reduce { a, b -> a.intersect(b) }.size
+    } else {
+        0
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(vertical = 16.dp),
+            color = ShiguPalette.Paper,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("策略对比", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("关闭", fontSize = 10.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onDismiss))
+                }
+                Text(
+                    "回测为 1 年 / 300 池概览；创建后为纸面模拟。重叠 = 选中策略的共同持仓数。",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkFaint,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 5.dp),
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    items(state.strategies) { cfg ->
+                        PaperPill(
+                            text = cfg.name,
+                            selected = cfg.id in selectedIds,
+                            onClick = {
+                                selectedIds = if (cfg.id in selectedIds) selectedIds - cfg.id else selectedIds + cfg.id
+                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("组合重叠：$overlap 只", fontSize = 9.sp, color = if (overlap > 0) ShiguPalette.Alert else ShiguPalette.InkFaint)
+                Spacer(Modifier.height(5.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    Text("策略", fontSize = 8.sp, color = ShiguPalette.InkFaint, modifier = Modifier.weight(1.5f))
+                    Text("回测", fontSize = 8.sp, color = ShiguPalette.InkFaint, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
+                    Text("创建后", fontSize = 8.sp, color = ShiguPalette.InkFaint, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
+                }
+                LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    items(selected, key = { it.id }) { cfg ->
+                        val bt = state.summaries[cfg.id] ?: state.backtests[cfg.id]
+                        val since = state.since[cfg.id]
+                        Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(cfg.name, fontSize = 9.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1.5f))
+                                Text(
+                                    bt?.let { formatPct(it.stats.totalReturn) } ?: "—",
+                                    fontSize = 10.sp,
+                                    color = changeColor(bt?.stats?.totalReturn ?: 0.0),
+                                    modifier = Modifier.weight(1f),
+                                    textAlign = TextAlign.End,
+                                )
+                                Text(
+                                    since?.let { formatPct(it.returnPct) } ?: "—",
+                                    fontSize = 10.sp,
+                                    color = changeColor(since?.returnPct ?: 0.0),
+                                    modifier = Modifier.weight(1f),
+                                    textAlign = TextAlign.End,
+                                )
+                            }
+                            Text(
+                                bt?.let {
+                                    "回撤 " + formatPct(it.stats.maxDrawdown) +
+                                        " · 夏普 " + String.format(Locale.CHINA, "%.2f", it.stats.sharpe) +
+                                        " · 交易 " + it.stats.tradeCount +
+                                        " · 费用 ¥" + String.format(Locale.CHINA, "%.0f", it.stats.totalFees)
+                                } ?: "回测未运行",
+                                fontSize = 7.5.sp,
+                                color = ShiguPalette.InkFaint,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -520,6 +643,7 @@ private fun ParamRow(
 @Composable
 private fun ResultCard(result: BacktestResult, onOpenStock: (String) -> Unit) {
     val s = result.stats
+    val context = LocalContext.current
     SketchCard(contentPadding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -586,7 +710,35 @@ private fun ResultCard(result: BacktestResult, onOpenStock: (String) -> Unit) {
         if (result.trades.isNotEmpty()) {
             Spacer(Modifier.height(7.dp))
             SketchDivider(seed = "result-trades")
-            Text("最近交易", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("最近交易", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "复制 CSV →",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier.clickable {
+                        val sb = StringBuilder("code,name,entryDate,exitDate,entryPrice,exitPrice,shares,pnl,pnlPct,holdDays,reason,fees\n")
+                        result.trades.forEach { t ->
+                            sb.append(t.code).append(',')
+                                .append(t.name).append(',')
+                                .append(t.entryDate).append(',')
+                                .append(t.exitDate.orEmpty()).append(',')
+                                .append(t.entryPrice).append(',')
+                                .append(t.exitPrice ?: "").append(',')
+                                .append(t.shares).append(',')
+                                .append(t.pnl).append(',')
+                                .append(t.pnlPct).append(',')
+                                .append(t.holdDays).append(',')
+                                .append(t.reason).append(',')
+                                .append(t.fees).append('\n')
+                        }
+                        context.getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText("shigu-trades", sb.toString()))
+                        Toast.makeText(context, "交易 CSV 已复制", Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
             result.trades.takeLast(5).reversed().forEach { t ->
                 TradeRow(t)
             }

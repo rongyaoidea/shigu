@@ -27,6 +27,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +41,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.shigu.core.BacktestResult
 import com.shigu.core.Holding
 import com.shigu.core.PaperDetail
+import com.shigu.core.PortfolioSummary
+import com.shigu.core.RebalanceEstimator
+import com.shigu.core.RebalancePlan
 import com.shigu.core.Trade
 import com.shigu.core.WatchItem
 import com.shigu.core.SinceCreationResult
@@ -77,6 +84,7 @@ fun WatchScreen(
     val live = state.strategies.mapNotNull { state.since[it.id] }
     val combinedEquity = live.sumOf { 1_000_000.0 * (1.0 + it.returnPct) }
     val avgReturn = if (live.isEmpty()) 0.0 else live.map { it.returnPct }.average()
+    var showPortfolio by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -114,11 +122,24 @@ fun WatchScreen(
                     }
                 }
                 Spacer(Modifier.height(5.dp))
+                val portfolio = state.portfolioSummary
                 Row(Modifier.fillMaxWidth()) {
-                    MetricCell("组合纸面", "¥%.0f".format(combinedEquity), Modifier.weight(1f))
-                    MetricCell("平均收益", formatPct(avgReturn), Modifier.weight(1f))
-                    MetricCell("策略数", "${live.size}", Modifier.weight(1f))
+                    MetricCell("组合纸面", "¥%.0f".format(portfolio?.equity ?: combinedEquity), Modifier.weight(1f))
+                    MetricCell("组合收益", formatPct(portfolio?.returnPct ?: avgReturn), Modifier.weight(1f))
+                    MetricCell("重叠", "${portfolio?.overlap?.size ?: 0} 只", Modifier.weight(1f))
+                    MetricCell(
+                        "最大单票",
+                        portfolio?.let { "%.1f%%".format(it.topWeight * 100) } ?: "—",
+                        Modifier.weight(1f),
+                    )
                 }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "组合详情 →",
+                    fontSize = 8.5.sp,
+                    color = ShiguPalette.Ink,
+                    modifier = Modifier.clickable { showPortfolio = true },
+                )
             }
         }
 
@@ -211,6 +232,92 @@ fun WatchScreen(
     if (state.paperDetail != null) {
         PaperDetailDialog(state.paperDetail!!, onClosePaper)
     }
+
+    if (showPortfolio) {
+        state.portfolioSummary?.let { summary ->
+            PortfolioDialog(summary, onClose = { showPortfolio = false })
+        }
+    }
+}
+
+@Composable
+private fun PortfolioDialog(summary: PortfolioSummary, onClose: () -> Unit) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(vertical = 16.dp),
+            color = ShiguPalette.Paper,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            LazyColumn(Modifier.heightIn(max = 680.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("组合层", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "按每个策略 100 万名义本金合并 · 不是实盘账户",
+                                fontSize = 8.5.sp,
+                                color = ShiguPalette.InkSoft,
+                            )
+                        }
+                        Text("关闭", fontSize = 10.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onClose))
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth()) {
+                        MetricCell("组合纸面", "¥%.0f".format(summary.equity), Modifier.weight(1f))
+                        MetricCell("总收益", formatPct(summary.returnPct), Modifier.weight(1f))
+                        MetricCell("现金", "¥%.0f".format(summary.cash), Modifier.weight(1f))
+                    }
+                }
+                item { SketchDivider(seed = "portfolio") }
+                item { Text("合并持仓 · Top 10", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) }
+                if (summary.holdings.isEmpty()) {
+                    item { Text("当前没有持仓。", fontSize = 9.sp, color = ShiguPalette.InkSoft) }
+                } else {
+                    items(summary.holdings.take(10)) { h ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(h.name, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "${h.code} · 被 ${h.strategyCount} 个策略持有",
+                                    fontSize = 7.5.sp,
+                                    color = if (h.strategyCount > 1) ShiguPalette.Alert else ShiguPalette.InkFaint,
+                                )
+                            }
+                            Text("%.1f%%".format(h.weight * 100), fontSize = 10.sp)
+                        }
+                    }
+                }
+                if (summary.overlap.isNotEmpty()) {
+                    item { SketchDivider(seed = "portfolio-overlap") }
+                    item { Text("重叠持仓", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) }
+                    items(summary.overlap.take(8)) { h ->
+                        Text(
+                            "${h.name} ${h.code} · ${h.strategyCount} 个策略 · %.1f%%".format(h.weight * 100),
+                            fontSize = 9.sp,
+                            color = ShiguPalette.Alert,
+                        )
+                    }
+                }
+                if (summary.correlations.isNotEmpty()) {
+                    item { SketchDivider(seed = "portfolio-corr") }
+                    item { Text("策略相关性 · 日收益", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) }
+                    items(summary.correlations.take(8)) { c ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${c.aName} × ${c.bName}", fontSize = 8.5.sp, modifier = Modifier.weight(1f))
+                            Text("%.2f".format(c.corr), fontSize = 9.sp, color = changeColor(c.corr))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -222,6 +329,7 @@ private fun StrategySimCard(
     onOpenStock: (String) -> Unit,
     onOpenPaper: () -> Unit,
 ) {
+    var showPreview by remember { mutableStateOf(false) }
     SketchCard(contentPadding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -240,14 +348,25 @@ private fun StrategySimCard(
                     color = ShiguPalette.InkSoft,
                 )
             }
-            Text(
-                "详情 →",
-                fontSize = 8.sp,
-                color = ShiguPalette.InkSoft,
-                modifier = Modifier
-                    .clickable(onClick = onOpenPaper)
-                    .padding(start = 6.dp, top = 4.dp, bottom = 4.dp),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "预览 →",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier
+                        .clickable { showPreview = true }
+                        .padding(start = 6.dp, top = 4.dp, bottom = 4.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "详情 →",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier
+                        .clickable(onClick = onOpenPaper)
+                        .padding(top = 4.dp, bottom = 4.dp),
+                )
+            }
         }
         Spacer(Modifier.height(5.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -338,6 +457,78 @@ private fun StrategySimCard(
         } else {
             Spacer(Modifier.height(3.dp))
             Text("暂无持仓；下一个调仓日按因子打分买入。", fontSize = 8.sp, color = ShiguPalette.InkFaint)
+        }
+    }
+
+    if (showPreview) {
+        val plan = since?.let { RebalanceEstimator.estimate(config, it) }
+        RebalanceDialog(plan = plan, config = config, onClose = { showPreview = false })
+    }
+}
+
+@Composable
+private fun RebalanceDialog(plan: RebalancePlan?, config: StrategyConfig, onClose: () -> Unit) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(vertical = 16.dp),
+            color = ShiguPalette.Paper,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("调仓预览", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("关闭", fontSize = 10.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onClose))
+                }
+                Text(
+                    "按当前目标 TopK、等权、整手、收盘价估算；实际以调仓日开盘为准。",
+                    fontSize = 8.5.sp,
+                    color = ShiguPalette.InkSoft,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+                )
+                if (plan == null) {
+                    Text("还没有模拟持仓/目标，先去“模拟”页核对一次。", fontSize = 10.sp, color = ShiguPalette.InkSoft)
+                } else {
+                    Row(Modifier.fillMaxWidth()) {
+                        MetricCell("组合权益", "¥%.0f".format(plan.equity), Modifier.weight(1f))
+                        MetricCell("目标", "${plan.targetCount} 只", Modifier.weight(1f))
+                        MetricCell("预估费用", "¥%.0f".format(plan.estimatedFees), Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        MetricCell("买入", "¥%.0f".format(plan.buyAmount), Modifier.weight(1f))
+                        MetricCell("卖出", "¥%.0f".format(plan.sellAmount), Modifier.weight(1f))
+                        MetricCell("换手", "%.1f%%".format(plan.turnoverPct * 100), Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    SketchDivider(seed = "rebalance-preview")
+                    if (plan.orders.isEmpty()) {
+                        Text("目标与当前持仓一致，无需调仓。", fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.padding(top = 6.dp))
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            items(plan.orders) { o ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(o.side, fontSize = 8.sp, color = if (o.side == "买入") ShiguPalette.Up else ShiguPalette.Down, modifier = Modifier.width(28.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(o.name, fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+                                        Text("${o.code} · ${o.reason}", fontSize = 7.5.sp, color = ShiguPalette.InkFaint)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text("%d 股 @ %.2f".format(o.shares, o.price), fontSize = 8.5.sp)
+                                        Text("¥%.0f · 费 %.0f".format(o.amount, o.fee), fontSize = 7.5.sp, color = ShiguPalette.InkFaint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -501,7 +692,7 @@ private fun TradeRow(t: Trade) {
                 color = changeColor(if (t.pnl >= 0) 1.0 else -1.0),
             )
             Text(
-                "${formatPct(t.pnlPct)} · 费 %.0f".format(t.fees),
+                formatPct(t.pnlPct) + " · 费 " + String.format(Locale.CHINA, "%.0f", t.fees),
                 fontSize = 7.5.sp,
                 color = ShiguPalette.InkFaint,
             )

@@ -12,6 +12,8 @@ import com.shigu.core.FactorKey
 import com.shigu.core.FactorStats
 import com.shigu.core.FactorWeight
 import com.shigu.core.PanelBuilder
+import com.shigu.core.PortfolioAggregator
+import com.shigu.core.PortfolioSummary
 import com.shigu.core.ScreenerResult
 import com.shigu.core.SinceCreationResult
 import com.shigu.core.Stock
@@ -56,6 +58,7 @@ data class UiState(
     val summaries: Map<String, BacktestResult> = emptyMap(),
     val backtests: Map<String, BacktestResult> = emptyMap(),
     val since: Map<String, SinceCreationResult> = emptyMap(),
+    val portfolioSummary: PortfolioSummary? = null,
     val strategyChanges: List<com.shigu.core.StrategyChange> = emptyList(),
     val paperDetail: com.shigu.core.PaperDetail? = null,
     val paperDetailLoading: Boolean = false,
@@ -329,8 +332,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val refresh = runCatching { paper.refreshAll(snapshot.strategies) }.getOrNull()
             if (refresh != null) {
                 _state.update {
+                    val merged = it.since + refresh.since
                     it.copy(
-                        since = it.since + refresh.since,
+                        since = merged,
+                        portfolioSummary = PortfolioAggregator.build(it.strategies, merged),
                         strategyChanges = refresh.changes,
                         simulationLoading = false,
                     )
@@ -426,6 +431,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     backtests = it.backtests - id,
                     since = it.since - id,
                     summaries = it.summaries - id,
+                    portfolioSummary = PortfolioAggregator.build(strategies, it.since - id),
                 )
             }
         }

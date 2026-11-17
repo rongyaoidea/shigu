@@ -51,6 +51,7 @@ object JsonCodec {
         f.put("owners", JSONArray(c.filters.owners.map { it.name }))
         f.put("minListedDays", c.filters.minListedDays)
         f.put("excludeSuspended", c.filters.excludeSuspended)
+        f.put("requireProfile", c.filters.requireProfile)
         f.put("boards", JSONArray(c.filters.boards.map { it.name }))
         o.put("filters", f)
         return o.toString()
@@ -110,6 +111,7 @@ object JsonCodec {
                 owners = if (owners.isEmpty()) OwnerType.entries.toSet() else owners,
                 minListedDays = f.optInt("minListedDays", 0),
                 excludeSuspended = f.optBoolean("excludeSuspended", false),
+                requireProfile = f.optBoolean("requireProfile", false),
                 boards = if (boards.isEmpty()) StrategyFilters().boards else boards,
             ),
             rebalanceDays = o.optInt("rebalanceDays", 20),

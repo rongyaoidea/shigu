@@ -120,6 +120,18 @@ fun StockScreen(
                             Spacer(Modifier.width(4.dp))
                             MiniTag(s.ownerType.label)
                         }
+                        if (s.board == com.shigu.core.Board.BSE) {
+                            Spacer(Modifier.width(4.dp))
+                            MiniTag("北交所·不复权", ShiguPalette.Alert)
+                        }
+                        if (s.suspended) {
+                            Spacer(Modifier.width(4.dp))
+                            MiniTag("停牌", ShiguPalette.Alert)
+                        }
+                        if (s.profileUpdatedAt <= 0 && s.board != com.shigu.core.Board.ETF) {
+                            Spacer(Modifier.width(4.dp))
+                            MiniTag("资料未同步", ShiguPalette.Alert)
+                        }
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(

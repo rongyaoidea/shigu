@@ -952,6 +952,9 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             dbBytes = bytes,
             profileCount = countProfiles().toInt(),
             profileReportDate = getMeta("profile_report_date").orEmpty(),
+            bseCount = scalar("SELECT COUNT(*) FROM stocks WHERE board='BSE'").toInt(),
+            stCount = scalar("SELECT COUNT(*) FROM stocks WHERE st_status<>'NORMAL'").toInt(),
+            suspendedCount = scalar("SELECT COUNT(*) FROM stocks WHERE suspended=1").toInt(),
         )
     }
 

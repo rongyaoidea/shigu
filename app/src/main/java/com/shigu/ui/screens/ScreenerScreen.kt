@@ -56,6 +56,7 @@ import com.shigu.core.Board
 import com.shigu.core.FactorKey
 import com.shigu.core.FactorStats
 import com.shigu.core.FactorWeight
+import com.shigu.core.FunnelStep
 import com.shigu.core.OwnerType
 import com.shigu.core.Pick
 import com.shigu.core.ScoringMode
@@ -100,6 +101,7 @@ fun ScreenerScreen(
 ) {
     var showFactor by remember { mutableStateOf(false) }
     var showBasic by remember { mutableStateOf(false) }
+    var showFunnel by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     var strategyName by remember { mutableStateOf("") }
     val boards = state.screenConfig.filters.boards
@@ -224,8 +226,19 @@ fun ScreenerScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    val funnel = state.screenResult?.funnel.orEmpty()
+                    if (funnel.isNotEmpty()) {
+                        Text(
+                            "漏斗 · 全池 ${funnel.first().remaining} → 命中 $count →",
+                            fontSize = 8.5.sp,
+                            color = ShiguPalette.Ink,
+                            modifier = Modifier
+                                .clickable { showFunnel = true }
+                                .padding(top = 3.dp),
+                        )
+                    }
                 }
-                Text("z-score 加权", fontSize = 9.sp, color = ShiguPalette.InkFaint)
+                Text("${state.screenConfig.scoring.label} 加权", fontSize = 9.sp, color = ShiguPalette.InkFaint)
             }
         }
 
@@ -295,6 +308,13 @@ fun ScreenerScreen(
                 showBasic = false
                 onApplyFilters(filters)
             },
+        )
+    }
+
+    if (showFunnel) {
+        FunnelDialog(
+            steps = state.screenResult?.funnel.orEmpty(),
+            onDismiss = { showFunnel = false },
         )
     }
 
@@ -798,6 +818,47 @@ private fun FactorStatsDialog(
 }
 
 @Composable
+private fun FunnelDialog(steps: List<FunnelStep>, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = true)) {
+        Surface(color = ShiguPalette.Paper, shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("筛选漏斗", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("关闭", fontSize = 9.sp, color = ShiguPalette.InkSoft, modifier = Modifier.clickable(onClick = onDismiss))
+                }
+                Text("每一步只统计“首次被该步骤淘汰”的股票；因子覆盖不足单独统计。", fontSize = 8.sp, color = ShiguPalette.InkFaint, modifier = Modifier.padding(vertical = 4.dp))
+                LazyColumn(Modifier.heightIn(max = 500.dp)) {
+                    items(steps) { step ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(step.label, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                if (step.reasons.isNotEmpty()) {
+                                    Text(
+                                        step.reasons.entries.joinToString(" · ") { "${it.key} ${it.value}" },
+                                        fontSize = 8.sp,
+                                        color = ShiguPalette.InkFaint,
+                                    )
+                                }
+                            }
+                            Text("${step.remaining} 只", fontSize = 10.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (step.dropped > 0) "-${step.dropped}" else "—",
+                                fontSize = 9.sp,
+                                color = if (step.dropped > 0) ShiguPalette.Alert else ShiguPalette.InkFaint,
+                                modifier = Modifier.width(42.dp),
+                                textAlign = TextAlign.End,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SmallFilterButton(
     label: String,
     active: Boolean,
@@ -846,6 +907,7 @@ private fun BasicFilterDialog(
     var stStatuses by remember { mutableStateOf(initial.stStatuses) }
     var minDays by remember { mutableStateOf(initial.minListedDays) }
     var excludeSuspended by remember { mutableStateOf(initial.excludeSuspended) }
+    var requireProfile by remember { mutableStateOf(initial.requireProfile) }
     var boards by remember { mutableStateOf(initial.boards) }
     var minPrice by remember { mutableStateOf(trimNum(initial.minPrice)) }
     var minAmount by remember { mutableStateOf(trimNum(initial.minAmount20 / 1e8)) }
@@ -961,6 +1023,15 @@ private fun BasicFilterDialog(
                     }
 
                     item {
+                        FilterHeader("数据质量", "资料完整 = 有企业性质/财务快照；会排除 ETF")
+                        PaperPill(
+                            text = "只看资料完整",
+                            selected = requireProfile,
+                            onClick = { requireProfile = !requireProfile },
+                        )
+                    }
+
+                    item {
                         FilterHeader(
                             title = "板块",
                             hint = "可多选；与上方资产池联动",
@@ -1033,6 +1104,7 @@ private fun BasicFilterDialog(
                                 stStatuses = setOf(StStatus.NORMAL)
                                 minDays = 0
                                 excludeSuspended = false
+                                requireProfile = false
                                 boards = StrategyFilters().boards
                                 minPrice = "2"
                                 minAmount = "0.5"
@@ -1066,6 +1138,7 @@ private fun BasicFilterDialog(
                                         owners = cleanOwners,
                                         minListedDays = minDays,
                                         excludeSuspended = excludeSuspended,
+                                        requireProfile = requireProfile,
                                         boards = cleanBoards,
                                     ),
                                 )

@@ -6,6 +6,21 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 
+/** 筛选淘汰原因；顺序决定漏斗展示顺序。 */
+enum class FilterReason(val label: String) {
+    BOARD("板块/资产"),
+    PRICE("价格"),
+    AMOUNT("流动性"),
+    ST("ST/风险警示"),
+    SUSPENDED("停牌"),
+    OWNER("企业性质"),
+    LISTED("上市天数"),
+    PE("PE 上限"),
+    PB("PB 上限"),
+    CAP("市值区间"),
+    PROFILE("资料未同步"),
+}
+
 class Panel(
     val calendar: List<String>,
     val stocks: List<Stock>,
@@ -116,6 +131,13 @@ data class ScoredStock(
     val score: Double,
     val values: Map<FactorKey, Double?>,
     val contributions: Map<FactorKey, Double> = emptyMap(),
+)
+
+data class FunnelStep(
+    val label: String,
+    val remaining: Int,
+    val dropped: Int,
+    val reasons: Map<String, Int> = emptyMap(),
 )
 
 object FactorEngine {
@@ -535,6 +557,46 @@ object FactorEngine {
         }
     }
 
+    /** 与 scoreAt 完全一致的过滤顺序；漏斗和打分共用，避免口径漂移。 */
+    fun filterReason(panel: Panel, si: Int, i: Int, filters: StrategyFilters): FilterReason? {
+        val stock = panel.stocks[si]
+        if (stock.board !in filters.boards) return FilterReason.BOARD
+        val price = panel.close[si][i]
+        if (price.isNaN() || price < filters.minPrice) return FilterReason.PRICE
+        val amount20 = value(panel, si, i, FactorKey.AMOUNT20)
+        if (amount20 == null || amount20 < filters.minAmount20) return FilterReason.AMOUNT
+
+        val status = panel.statusAt(stock.code, panel.calendar[i])
+        val stStatus = status?.stStatus ?: stock.stStatus
+        val ownerType = status?.ownerType ?: stock.ownerType
+        val suspended = status?.suspended ?: stock.suspended
+        val listedDate = status?.listedDate?.takeIf { it.isNotBlank() } ?: stock.listedDate
+
+        if (filters.excludeSt && stStatus != StStatus.NORMAL) return FilterReason.ST
+        if (filters.stStatuses.isNotEmpty() && stStatus !in filters.stStatuses) return FilterReason.ST
+        if (filters.excludeSuspended && suspended) return FilterReason.SUSPENDED
+        if (filters.owners.isNotEmpty() && ownerType !in filters.owners) return FilterReason.OWNER
+        if (filters.minListedDays > 0) {
+            val days = listedDaysBetween(listedDate, panel.calendar[i]) ?: return FilterReason.LISTED
+            if (days < filters.minListedDays) return FilterReason.LISTED
+        }
+
+        val peV = value(panel, si, i, FactorKey.PE)
+        val pbV = value(panel, si, i, FactorKey.PB)
+        if (filters.maxPe != null && (peV == null || peV <= 0 || peV > filters.maxPe)) return FilterReason.PE
+        if (filters.maxPb != null && (pbV == null || pbV <= 0 || pbV > filters.maxPb)) return FilterReason.PB
+
+        if (filters.minMarketCap != null || filters.maxMarketCap != null) {
+            val cap = panel.marketCap[si][i].takeIf { !it.isNaN() && it > 0 }
+                ?: stock.marketCap?.takeIf { i == panel.lastIndex && it > 0 }
+                ?: return FilterReason.CAP
+            if (filters.minMarketCap != null && cap < filters.minMarketCap) return FilterReason.CAP
+            if (filters.maxMarketCap != null && cap > filters.maxMarketCap) return FilterReason.CAP
+        }
+        if (filters.requireProfile && stock.profileUpdatedAt <= 0) return FilterReason.PROFILE
+        return null
+    }
+
     fun scoreAt(panel: Panel, i: Int, config: StrategyConfig): List<ScoredStock> {
         if (i < 0 || panel.stocks.isEmpty()) return emptyList()
         val totalWeight = config.factors.sumOf { it.weight }
@@ -582,40 +644,7 @@ object FactorEngine {
 
         val result = ArrayList<ScoredStock>(count)
         for (si in 0 until count) {
-            val stock = panel.stocks[si]
-            val price = panel.close[si][i]
-            val filters = config.filters
-            val status = panel.statusAt(stock.code, panel.calendar[i])
-            val stStatus = status?.stStatus ?: stock.stStatus
-            val ownerType = status?.ownerType ?: stock.ownerType
-            val suspended = status?.suspended ?: stock.suspended
-            val listedDate = status?.listedDate?.takeIf { it.isNotBlank() } ?: stock.listedDate
-            if (price.isNaN() || price < filters.minPrice) continue
-            if (filters.excludeSt && stStatus != StStatus.NORMAL) continue
-            if (filters.stStatuses.isNotEmpty() && stStatus !in filters.stStatuses) continue
-            if (filters.owners.isNotEmpty() && ownerType !in filters.owners) continue
-            if (filters.excludeSuspended && suspended) continue
-            if (filters.minListedDays > 0) {
-                val days = listedDaysBetween(listedDate, panel.calendar[i]) ?: continue
-                if (days < filters.minListedDays) continue
-            }
-            if (stock.board !in filters.boards) continue
-
-            val amount20 = value(panel, si, i, FactorKey.AMOUNT20)
-            if (amount20 == null || amount20 < filters.minAmount20) continue
-
-            val peV = value(panel, si, i, FactorKey.PE)
-            val pbV = value(panel, si, i, FactorKey.PB)
-            if (filters.maxPe != null && (peV == null || peV <= 0 || peV > filters.maxPe)) continue
-            if (filters.maxPb != null && (pbV == null || pbV <= 0 || pbV > filters.maxPb)) continue
-
-            if (filters.minMarketCap != null || filters.maxMarketCap != null) {
-                val cap = panel.marketCap[si][i].takeIf { !it.isNaN() && it > 0 }
-                    ?: stock.marketCap?.takeIf { i == panel.lastIndex && it > 0 }
-                    ?: continue
-                if (filters.minMarketCap != null && cap < filters.minMarketCap) continue
-                if (filters.maxMarketCap != null && cap > filters.maxMarketCap) continue
-            }
+            if (filterReason(panel, si, i, config.filters) != null) continue
 
             var score = 0.0
             var usedWeight = 0.0
@@ -898,6 +927,52 @@ object CrossSectionalEngine {
     }
 }
 
+object ScreenerFunnel {
+    fun build(panel: Panel, config: StrategyConfig, scoredCount: Int): List<FunnelStep> {
+        val i = panel.lastIndex
+        if (i < 0) return emptyList()
+        var remaining = panel.stocks.indices.toList()
+        val steps = ArrayList<FunnelStep>(9)
+        steps += FunnelStep("全池", remaining.size, 0)
+
+        fun groupOf(reason: FilterReason): String? = when (reason) {
+            FilterReason.BOARD -> "板块/资产"
+            FilterReason.PRICE, FilterReason.AMOUNT -> "价格/流动性"
+            FilterReason.ST, FilterReason.SUSPENDED -> "ST/停牌"
+            FilterReason.OWNER -> "企业性质"
+            FilterReason.LISTED -> "上市天数"
+            FilterReason.PE, FilterReason.PB, FilterReason.CAP -> "估值/市值"
+            FilterReason.PROFILE -> "资料完整"
+        }
+
+        listOf("板块/资产", "价格/流动性", "ST/停牌", "企业性质", "上市天数", "估值/市值", "资料完整").forEach { group ->
+            val before = remaining.size
+            val reasons = LinkedHashMap<String, Int>()
+            remaining = remaining.filter { si ->
+                val r = FactorEngine.filterReason(panel, si, i, config.filters)
+                if (r != null && groupOf(r) == group) {
+                    reasons[r.label] = (reasons[r.label] ?: 0) + 1
+                    false
+                } else {
+                    true
+                }
+            }
+            if (before != remaining.size) {
+                steps += FunnelStep(group, remaining.size, before - remaining.size, reasons)
+            }
+        }
+
+        val beforeScore = remaining.size
+        steps += FunnelStep(
+            "因子数据完整",
+            scoredCount,
+            (beforeScore - scoredCount).coerceAtLeast(0),
+            if (beforeScore > scoredCount) mapOf("因子覆盖不足" to (beforeScore - scoredCount)) else emptyMap(),
+        )
+        return steps
+    }
+}
+
 object ScreenerEngine {
     fun screen(panel: Panel, config: StrategyConfig): ScreenerResult {
         val i = panel.lastIndex
@@ -920,6 +995,12 @@ object ScreenerEngine {
                 contributions = s.contributions,
             )
         }
-        return ScreenerResult(rows, scored.size, panel.stocks.size)
+        val funnel = ScreenerFunnel.build(panel, config, scored.size) + FunnelStep(
+            label = "最终命中",
+            remaining = rows.size,
+            dropped = (scored.size - rows.size).coerceAtLeast(0),
+            reasons = if (scored.size > rows.size) mapOf("TopK 截断" to (scored.size - rows.size)) else emptyMap(),
+        )
+        return ScreenerResult(rows, scored.size, panel.stocks.size, funnel = funnel)
     }
 }

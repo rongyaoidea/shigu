@@ -95,6 +95,18 @@ fun DataScreen(
                     MetricCell("最后交易日", stats.lastTradeDate.ifBlank { "—" }, Modifier.weight(1f))
                     MetricCell("最后同步", if (stats.lastSync > 0) shortDate(stats.lastSync) else "—", Modifier.weight(1f))
                     MetricCell("数据源", "新浪+腾讯", Modifier.weight(1f))                }
+                Spacer(Modifier.height(5.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    MetricCell("北交所", "${stats.bseCount} 只 · 不复权", Modifier.weight(1f))
+                    MetricCell("ST/*ST", "${stats.stCount} 只", Modifier.weight(1f))
+                    MetricCell("停牌", "${stats.suspendedCount} 只", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "成交额/换手为日线估算；ETF 无 F10 企业性质。",
+                    fontSize = 8.sp,
+                    color = ShiguPalette.InkFaint,
+                )
             }
         }
 
