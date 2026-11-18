@@ -474,6 +474,9 @@ private fun PickCard(pick: Pick, onClick: () -> Unit) {
                 }
                 Spacer(Modifier.height(3.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (pick.factors.isEmpty() && pick.customValues.isEmpty()) {
+                        Text("仅基础筛选 · 未选因子", fontSize = 9.sp, color = ShiguPalette.InkFaint)
+                    }
                     pick.factors.entries.take(3).forEach { (k, v) ->
                         Text(
                             "${k.shortLabel} ${factorText(k, v)}",
@@ -535,7 +538,12 @@ private fun PickCard(pick: Pick, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("综合分 ${scoreText(pick.score)}", fontSize = 9.sp, color = ShiguPalette.InkFaint)
+            Text(
+                if (pick.factors.isEmpty() && pick.customValues.isEmpty()) "仅基础筛选"
+                else "综合分 ${scoreText(pick.score)}",
+                fontSize = 9.sp,
+                color = ShiguPalette.InkFaint,
+            )
             Spacer(Modifier.weight(1f))
             Icon(Icons.Filled.ArrowForward, null, modifier = Modifier.size(13.dp), tint = ShiguPalette.InkFaint)
         }
@@ -697,18 +705,24 @@ fun FactorPickerDialog(
                     }
                     Box(Modifier.weight(0.65f)) {
                         SketchButton(
-                            label = "应用 ${selected.size} 个因子",
+                            label = if (selected.isEmpty()) "应用 0 个因子" else "应用 ${selected.size} 个因子",
                             onClick = {
                                 val total = selected.values.sum().coerceAtLeast(1e-9)
                                 val list = selected.entries
                                     .sortedByDescending { it.value }
                                     .map { FactorWeight(it.key, it.value / total) }
-                                if (list.isNotEmpty()) onApply(list, topN, scoring)
+                                onApply(list, topN, scoring)
                             },
-                            enabled = selected.isNotEmpty(),
+                            enabled = true,
                         )
                     }
                 }
+                Text(
+                    "不选因子时只按基础过滤和自定义因子筛选；TopK 仍然生效。",
+                    fontSize = 9.sp,
+                    color = ShiguPalette.InkFaint,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
     }

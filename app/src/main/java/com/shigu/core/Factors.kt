@@ -645,7 +645,6 @@ object FactorEngine {
     fun scoreAt(panel: Panel, i: Int, config: StrategyConfig): List<ScoredStock> {
         if (i < 0 || panel.stocks.isEmpty()) return emptyList()
         val totalWeight = config.factors.sumOf { it.weight } + config.customFactors.sumOf { it.weight }
-        if (totalWeight <= 0.0) return emptyList()
 
         val count = panel.stocks.size
         val raw = HashMap<FactorKey, DoubleArray>(config.factors.size)
@@ -772,7 +771,7 @@ object FactorEngine {
                     usedWeight += cw.weight
                 }
             }
-            if (usedWeight < totalWeight * 0.5) continue
+            if (totalWeight > 0.0 && usedWeight < totalWeight * 0.5) continue
             val denom = if (usedWeight > 0.0) usedWeight else 1.0
             result += ScoredStock(
                 stockIndex = si,

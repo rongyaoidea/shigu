@@ -81,8 +81,20 @@ class FactorFilterTest {
     )
 
     @Test
-    fun `企业性质 ST 上市天数与停牌过滤同时生效`() {
-        val panel = panel()
+    fun `零因子时只按基础筛选返回`() {
+        val cfg = config(StrategyFilters(minPrice = 0.0, minAmount20 = 0.0)).copy(
+            factors = emptyList(),
+            maxPositions = 10,
+        )
+        val result = ScreenerEngine.screen(panel(), cfg)
+        assertTrue(result.rows.isNotEmpty())
+        assertTrue(result.rows.all { it.score == 0.0 })
+        assertTrue(result.rows.all { it.factors.isEmpty() })
+        assertTrue(result.rows.size <= 10)
+    }
+
+    @Test
+    fun `企业性质 ST 上市天数与停牌过滤同时生效`() {        val panel = panel()
         val result = FactorEngine.scoreAt(
             panel,
             panel.lastIndex,

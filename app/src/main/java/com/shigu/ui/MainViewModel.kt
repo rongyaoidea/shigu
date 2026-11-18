@@ -257,14 +257,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun applyFactors(factors: List<FactorWeight>, topN: Int, scoring: com.shigu.core.ScoringMode) {
-        if (factors.isEmpty()) {
-            _state.update { it.copy(message = "至少选择一个因子") }
-            return
-        }
+        val noFactors = factors.isEmpty()
         val cfg = _state.value.screenConfig.copy(
             id = "custom_screen",
             name = "自定义筛选",
-            subtitle = "用户自选因子",
+            subtitle = if (noFactors) "基础筛选 · 无内置因子" else "用户自选因子",
             factors = factors,
             maxPositions = topN,
             scoring = scoring,
@@ -482,6 +479,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveCustom(base: StrategyConfig, name: String) {
+        if (base.factors.isEmpty() && base.customFactors.isEmpty()) {
+            _state.update { it.copy(message = "保存策略至少需要一个内置因子或自定义因子") }
+            return
+        }
         viewModelScope.launch {
             val config = withContext(Dispatchers.IO) { repo.saveCustom(base, name) }
             val strategies = withContext(Dispatchers.IO) { repo.list() }
