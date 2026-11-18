@@ -119,7 +119,19 @@ fun OptionScreen(vm: OptionViewModel = viewModel()) {
                 Row(Modifier.fillMaxWidth()) {
                     MetricCell("期权合约", "${state.contracts.size} 个", Modifier.weight(1f))
                     MetricCell("标的价", "%.4f".format(state.underlyingPrice), Modifier.weight(1f))
-                    MetricCell("数据截止", state.lastBarDate.ifBlank { "—" }, Modifier.weight(1f))
+                    MetricCell(
+                        "数据截止",
+                        state.lastBarDate.ifBlank { "—" },
+                        Modifier.weight(1f),
+                        valueColor = if (state.dataStale) ShiguPalette.Down else ShiguPalette.Ink,
+                    )
+                }
+                if (state.chainHistoryDays > 0) {
+                    Text(
+                        "期权链快照已存 ${state.chainHistoryDays} 天 · 供未来真实期权回测",
+                        fontSize = 8.5.sp,
+                        color = ShiguPalette.InkFaint,
+                    )
                 }
             }
         }
@@ -354,6 +366,14 @@ private fun OptionBacktestSection(state: OptionUiState, vm: OptionViewModel) {
             Text("2021-11 起", fontSize = 9.sp, color = ShiguPalette.InkFaint)
         }
         Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("排序", fontSize = 9.sp, color = ShiguPalette.InkSoft)
+            PaperPill("5 年", !state.backtestSortOos, { vm.setBacktestSortOos(false) })
+            PaperPill("样本外", state.backtestSortOos, { vm.setBacktestSortOos(true) })
+            Spacer(Modifier.weight(1f))
+            Text("OOS 近2年", fontSize = 9.sp, color = ShiguPalette.InkFaint)
+        }
+        Spacer(Modifier.height(6.dp))
         if (state.backtestLoading) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth().height(4.dp),
@@ -381,7 +401,12 @@ private fun OptionBacktestSection(state: OptionUiState, vm: OptionViewModel) {
                 )
             }
             Spacer(Modifier.height(4.dp))
-            state.backtestResults.forEach { result ->
+            val sorted = if (state.backtestSortOos) {
+                state.backtestResults.sortedByDescending { it.stats.oosReturn }
+            } else {
+                state.backtestResults
+            }
+            sorted.forEach { result ->
                 BacktestRow(
                     result = result,
                     selected = state.backtestDetail?.stats?.presetId == result.stats.presetId,
@@ -404,6 +429,13 @@ private fun OptionBacktestSection(state: OptionUiState, vm: OptionViewModel) {
                     MetricCell("最大回撤", formatPct(detail.stats.maxDrawdown), Modifier.weight(1f))
                     MetricCell("夏普", "%.2f".format(detail.stats.sharpe), Modifier.weight(1f))
                     MetricCell("交易 / 胜率", "${detail.stats.trades} / ${(detail.stats.winRate * 100).toInt()}%", Modifier.weight(1f))
+                }
+                if (detail.stats.oosStart.isNotBlank()) {
+                    Row(Modifier.fillMaxWidth()) {
+                        MetricCell("样本外 ${detail.stats.oosStart.take(7)} 起", formatPct(detail.stats.oosReturn), Modifier.weight(1f))
+                        MetricCell("OOS 回撤", formatPct(detail.stats.oosMaxDrawdown), Modifier.weight(1f))
+                        MetricCell("OOS 超额", formatPct(detail.stats.oosReturn - detail.stats.oosEtfReturn), Modifier.weight(1f))
+                    }
                 }
                 Spacer(Modifier.height(4.dp))
                 EquityChart(detail.equity)
@@ -448,10 +480,17 @@ private fun BacktestRow(result: OptionBacktestResult, selected: Boolean, onClick
                 fontSize = 8.5.sp,
                 color = if (s.excessEtf > 0) ShiguPalette.Up else ShiguPalette.Down,
             )
+            if (s.oosStart.isNotBlank()) {
+                Text(
+                    "OOS ${formatPct(s.oosReturn)} · ${if (s.oosBeatEtf) "跑赢" else "落后"}",
+                    fontSize = 8.sp,
+                    color = if (s.oosBeatEtf) ShiguPalette.Up else ShiguPalette.Down,
+                )
+            }
         }
         if (s.beatBoth) {
             Spacer(Modifier.width(5.dp))
-            MiniTag("跑赢", ShiguPalette.Up)
+            MiniTag("5年", ShiguPalette.Up)
         }
     }
 }

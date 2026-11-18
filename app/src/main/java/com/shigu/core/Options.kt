@@ -135,7 +135,7 @@ object OptionSignalPresets {
             id = "mfi_reversion",
             name = "MFI 超跌反转",
             subtitle = "20/80 · 持有到反向极值",
-            description = "MFI14 < 20 买 call，MFI14 > 80 买 put；持有到反向极值再调仓。5 年期权回测在 510050/510300 均为正。",
+            description = "MFI14 < 20 买 call，MFI14 > 80 买 put；持有到反向极值。5 年总收益为正，但最近 2 年样本外为负，保留作均值回归对照。",
             rules = emptyList(),
             kind = OptionSignalKind.MFI_REVERSION,
             params = mapOf("low" to 20.0, "high" to 80.0),
@@ -144,7 +144,7 @@ object OptionSignalPresets {
             id = "mfi_reversion_wide",
             name = "MFI 宽幅反转",
             subtitle = "25/75 · 信号更多",
-            description = "把 MFI 阈值放宽到 25/75，交易更频繁；5 年收益更高，但高 IV 压力测试下 510300 会转负。",
+            description = "把 MFI 阈值放宽到 25/75，交易更频繁；5 年总收益高，但最近 2 年样本外为负，只作进取/对照。",
             rules = emptyList(),
             kind = OptionSignalKind.MFI_REVERSION,
             params = mapOf("low" to 25.0, "high" to 75.0),
@@ -153,7 +153,7 @@ object OptionSignalPresets {
             id = "rsi21_reversion",
             name = "RSI21 超跌反转",
             subtitle = "25/75 · 更平滑",
-            description = "RSI21 < 25 买 call，RSI21 > 75 买 put；持有到反向极值。5 年收益高，但高 IV 下 510300 不稳。",
+            description = "RSI21 < 25 买 call，RSI21 > 75 买 put；持有到反向极值。5 年总收益高，但最近 2 年样本外为负，只作进取/对照。",
             rules = emptyList(),
             kind = OptionSignalKind.RSI_REVERSION,
             params = mapOf("low" to 25.0, "high" to 75.0),
@@ -162,7 +162,7 @@ object OptionSignalPresets {
             id = "panic_1d",
             name = "单日恐慌反弹",
             subtitle = "跌 3% 买 call",
-            description = "单日跌幅 > 3% 后买 call；反弹 1% 或 RSI14 > 55 卖出。5 年回测回撤小、胜率高。",
+            description = "单日跌幅 > 3% 后买 call；反弹 1% 或 RSI14 > 55 卖出。5 年 +6.3%，最近 2 年样本外 +3.3%，回撤小。",
             rules = emptyList(),
             kind = OptionSignalKind.PANIC_1D,
             params = mapOf("drop" to 0.03, "gain" to 0.01, "rsi" to 55.0),
@@ -171,7 +171,7 @@ object OptionSignalPresets {
             id = "panic_5d",
             name = "五日恐慌反弹",
             subtitle = "5 日跌 6% 买 call",
-            description = "5 日跌幅 > 6% 后买 call；5 日反弹 2% 或 RSI14 > 55 卖出。5 年回测回撤小。",
+            description = "5 日跌幅 > 6% 后买 call；5 日反弹 2% 或 RSI14 > 55 卖出。5 年 +9.3%，最近 2 年样本外 +4.8%，回撤小。",
             rules = emptyList(),
             kind = OptionSignalKind.PANIC_5D,
             params = mapOf("drop" to 0.06, "gain" to 0.02, "rsi" to 55.0),
@@ -180,24 +180,26 @@ object OptionSignalPresets {
             id = "boll_reversion_30",
             name = "布林30日回归",
             subtitle = "30日 ±2σ",
-            description = "跌破 30 日布林下轨买 call，突破上轨买 put；持有到反向轨道。5 年基准下两个 ETF 均跑赢，但 IV 1.20 压力下会转负。",
+            description = "跌破 30 日布林下轨买 call，突破上轨买 put；持有到反向轨道。5 年 +31.7%，最近 2 年样本外 +11.4%；IV 1.20 压力下会转负。",
             rules = emptyList(),
             kind = OptionSignalKind.BOLL_REVERSION,
             params = mapOf("n" to 30.0, "k" to 2.0),
         ),
     )
 
-    private val featured = setOf(
+    private val featuredIds = listOf(
+        "boll_reversion_30",
+        "panic_5d",
+        "panic_1d",
         "mfi_reversion",
         "mfi_reversion_wide",
         "rsi21_reversion",
-        "panic_1d",
-        "panic_5d",
-        "boll_reversion_30",
     )
 
     /** 回测优选排在最前，原趋势策略保留作对照。 */
-    val all: List<OptionSignalPreset> = base.sortedBy { if (it.id in featured) 0 else 1 }
+    val all: List<OptionSignalPreset> =
+        featuredIds.mapNotNull { id -> base.firstOrNull { it.id == id } } +
+            base.filter { it.id !in featuredIds }
 
     fun byId(id: String): OptionSignalPreset? = all.firstOrNull { it.id == id }
 }

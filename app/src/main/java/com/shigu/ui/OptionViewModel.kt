@@ -37,7 +37,10 @@ data class OptionUiState(
     val backtestResults: List<OptionBacktestResult> = emptyList(),
     val backtestDetail: OptionBacktestResult? = null,
     val backtestIv: Double = 1.05,
+    val backtestSortOos: Boolean = true,
     val lastBarDate: String = "",
+    val chainHistoryDays: Int = 0,
+    val dataStale: Boolean = false,
     val message: String? = null,
     val lastSync: Long = 0L,
 ) {
@@ -65,6 +68,7 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
         val contracts = withContext(Dispatchers.IO) { repo.contracts(current.underlying) }
         val price = withContext(Dispatchers.IO) { repo.underlyingPrice(current.underlying) }
         val lastBarDate = withContext(Dispatchers.IO) { repo.lastBarDate(current.underlying) }
+        val historyDays = withContext(Dispatchers.IO) { repo.chainHistoryDays() }
         val strategies = withContext(Dispatchers.IO) {
             repo.strategies().map { repo.refresh(it) }
         }
@@ -73,6 +77,8 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
                 contracts = contracts,
                 underlyingPrice = price,
                 lastBarDate = lastBarDate,
+                chainHistoryDays = historyDays,
+                dataStale = isStale(lastBarDate),
                 strategies = strategies,
                 lastSync = contracts.maxOfOrNull { c -> c.updatedAt } ?: 0L,
             )
@@ -214,6 +220,10 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
         loadCachedBacktest()
     }
 
+    fun setBacktestSortOos(value: Boolean) {
+        _state.update { it.copy(backtestSortOos = value) }
+    }
+
     fun create() {
         val s = _state.value
         viewModelScope.launch {
@@ -243,6 +253,15 @@ class OptionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearMessage() {
         _state.update { it.copy(message = null) }
+    }
+
+    private fun isStale(date: String): Boolean {
+        if (date.isBlank()) return true
+        var expected = LocalDate.now()
+        while (expected.dayOfWeek == java.time.DayOfWeek.SATURDAY || expected.dayOfWeek == java.time.DayOfWeek.SUNDAY) {
+            expected = expected.minusDays(1)
+        }
+        return date < expected.minusDays(2).toString()
     }
 
     private fun rebuildTarget() {

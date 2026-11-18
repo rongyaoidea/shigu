@@ -76,6 +76,7 @@ class OptionBacktestTest {
         assertTrue(result.equity.size > 100)
         assertTrue(result.trades.isNotEmpty())
         assertFalse(result.stats.optionReturn.isNaN())
+        assertTrue(result.stats.oosStart.isNotBlank())
         assertTrue(result.equity.all { it.strategy > 0.0 })
         assertTrue(result.stats.winRate in 0.0..1.0)
     }

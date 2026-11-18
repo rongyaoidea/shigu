@@ -17,7 +17,7 @@ import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 7) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 8) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -131,6 +131,17 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX idx_option_backtest_underlying ON option_backtest_runs(underlying, created_at)")
+        db.execSQL(
+            """
+            CREATE TABLE option_chain_history(
+                date TEXT NOT NULL, code TEXT NOT NULL, underlying TEXT NOT NULL, name TEXT NOT NULL,
+                option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
+                last REAL NOT NULL, volume REAL NOT NULL, amount REAL NOT NULL, open_interest REAL NOT NULL,
+                updated_at INTEGER NOT NULL, PRIMARY KEY(date, code)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX idx_option_chain_history_date ON option_chain_history(date)")
         db.execSQL(
             """
             CREATE TABLE stock_status_history(
@@ -343,6 +354,19 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 """.trimIndent(),
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_option_backtest_underlying ON option_backtest_runs(underlying, created_at)")
+        }
+        if (oldVersion < 8) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS option_chain_history(
+                    date TEXT NOT NULL, code TEXT NOT NULL, underlying TEXT NOT NULL, name TEXT NOT NULL,
+                    option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
+                    last REAL NOT NULL, volume REAL NOT NULL, amount REAL NOT NULL, open_interest REAL NOT NULL,
+                    updated_at INTEGER NOT NULL, PRIMARY KEY(date, code)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_option_chain_history_date ON option_chain_history(date)")
         }
     }
 
@@ -893,6 +917,43 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         }
         return if (out.isEmpty()) null else runAt to out
     }
+
+    /** 每日保存一次期权链快照，为未来真实期权回测积累数据。 */
+    fun saveOptionChainHistory(date: String, contracts: List<OptionContract>) {
+        if (contracts.isEmpty() || date.isBlank()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val st = db.compileStatement(
+                "INSERT OR IGNORE INTO option_chain_history(date,code,underlying,name,option_type,strike,expiry,last,volume,amount,open_interest,updated_at) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            )
+            contracts.forEach { c ->
+                st.clearBindings()
+                st.bindString(1, date)
+                st.bindString(2, c.code)
+                st.bindString(3, c.underlying)
+                st.bindString(4, c.name)
+                st.bindString(5, c.type.name)
+                st.bindDouble(6, c.strike)
+                st.bindString(7, c.expiry)
+                st.bindDouble(8, c.last)
+                st.bindDouble(9, c.volume)
+                st.bindDouble(10, c.amount)
+                st.bindDouble(11, c.openInterest)
+                st.bindLong(12, c.updatedAt)
+                st.executeInsert()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun optionChainHistoryDays(): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(DISTINCT date) FROM option_chain_history",
+        null,
+    ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
     // ---------------- 时点状态 ----------------
 

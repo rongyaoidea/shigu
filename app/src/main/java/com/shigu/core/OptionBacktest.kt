@@ -43,10 +43,15 @@ data class OptionBacktestStats(
     val winRate: Double,
     val avgHoldDays: Double,
     val ivMultiplier: Double,
+    val oosStart: String = "",
+    val oosReturn: Double = 0.0,
+    val oosEtfReturn: Double = 0.0,
+    val oosMaxDrawdown: Double = 0.0,
 ) {
     val excessEtf: Double get() = optionReturn - etfReturn
     val excessCsi: Double get() = optionReturn - csiReturn
     val beatBoth: Boolean get() = optionReturn > etfReturn && optionReturn > csiReturn
+    val oosBeatEtf: Boolean get() = oosStart.isNotBlank() && oosReturn > oosEtfReturn
 }
 
 data class OptionBacktestResult(
@@ -263,6 +268,29 @@ object OptionBacktestEngine {
             if (peak > 0) mdd = min(mdd, p.strategy / peak - 1.0)
         }
         val wins = trades.count { it.pnl > 0 }
+        val end = runCatching { LocalDate.parse(endDate) }.getOrNull()
+        val begin = runCatching { LocalDate.parse(startDate) }.getOrNull()
+        val oosStartDate = if (end != null && begin != null) {
+            val twoYears = end.minusYears(2)
+            val halfway = begin.plusDays(((end.toEpochDay() - begin.toEpochDay()) / 2).coerceAtLeast(1))
+            if (twoYears > halfway) twoYears else halfway
+        } else {
+            null
+        }
+        val oosIdx = if (oosStartDate != null) equity.indexOfFirst { it.date >= oosStartDate.toString() } else -1
+        var oosReturn = 0.0
+        var oosEtf = 0.0
+        var oosMdd = 0.0
+        if (oosIdx >= 0 && oosIdx < equity.lastIndex && equity[oosIdx].strategy > 0 && equity[oosIdx].benchmark > 0) {
+            oosReturn = equity.last().strategy / equity[oosIdx].strategy - 1.0
+            oosEtf = equity.last().benchmark / equity[oosIdx].benchmark - 1.0
+            var peak = Double.NEGATIVE_INFINITY
+            for (i in oosIdx..equity.lastIndex) {
+                val v = equity[i].strategy
+                if (v > peak) peak = v
+                if (peak > 0) oosMdd = min(oosMdd, v / peak - 1.0)
+            }
+        }
         return OptionBacktestStats(
             underlying = underlying,
             presetId = preset.id,
@@ -280,6 +308,10 @@ object OptionBacktestEngine {
             winRate = if (trades.isEmpty()) 0.0 else wins.toDouble() / trades.size,
             avgHoldDays = if (trades.isEmpty()) 0.0 else trades.sumOf { it.holdDays }.toDouble() / trades.size,
             ivMultiplier = ivMultiplier,
+            oosStart = oosStartDate?.toString() ?: "",
+            oosReturn = oosReturn,
+            oosEtfReturn = oosEtf,
+            oosMaxDrawdown = oosMdd,
         )
     }
 

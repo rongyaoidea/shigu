@@ -24,6 +24,10 @@ object OptionBacktestCodec {
         .put("winRate", s.winRate)
         .put("avgHoldDays", s.avgHoldDays)
         .put("ivMultiplier", s.ivMultiplier)
+        .put("oosStart", s.oosStart)
+        .put("oosReturn", s.oosReturn)
+        .put("oosEtfReturn", s.oosEtfReturn)
+        .put("oosMaxDrawdown", s.oosMaxDrawdown)
         .toString()
 
     fun decodeStats(json: String): OptionBacktestStats? = runCatching {
@@ -45,6 +49,10 @@ object OptionBacktestCodec {
             winRate = o.getDouble("winRate"),
             avgHoldDays = o.getDouble("avgHoldDays"),
             ivMultiplier = o.getDouble("ivMultiplier"),
+            oosStart = o.optString("oosStart", ""),
+            oosReturn = o.optDouble("oosReturn", 0.0),
+            oosEtfReturn = o.optDouble("oosEtfReturn", 0.0),
+            oosMaxDrawdown = o.optDouble("oosMaxDrawdown", 0.0),
         )
     }.getOrNull()
 

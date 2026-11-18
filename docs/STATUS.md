@@ -39,7 +39,10 @@
   - 方向反转、合约到期（剩余 <=2 天）或信号中性时卖出旧仓/买入新仓；同方向不因平值漂移换合约；
   - 显示权利金、最大亏损、盈亏平衡、剩余天数；纸面按快照价盯市，到期按内在价值估算；
   - **5 年历史回测**：2021-11-17 起，东方财富 1600 条前复权日线；全部内置策略；BS + 20 日历史波动率理论定价，IV 1.05/1.20 压力；显示收益/回撤/夏普/交易/胜率/净值曲线；
-  - 5 年 IV1.05 实测：510050 RSI21 +125.38%、MFI 宽幅 +110.39%、MFI +46.35%、五日恐慌 +9.31%、单日恐慌 +6.27%；510300 MFI +115.84%、RSI21 +27.47%、MFI 宽幅 +25.77%、单日恐慌 +6.74%、五日恐慌 +3.97%；同期 ETF -3.61%/-10.97%、沪深300 -18.61%；
+  - 5 年 IV1.05 实测：510050 RSI21 +125.38%、MFI 宽幅 +110.39%、MFI +46.35%、布林30 +31.72%、五日恐慌 +9.31%、单日恐慌 +6.27%；510300 MFI +115.84%、RSI21 +27.47%、MFI 宽幅 +25.77%；
+  - 最近 2 年样本外：布林30 +11.44%、五日恐慌 +4.81%、单日恐慌 +3.34%；MFI/RSI21 样本外为负（-20%~-25%），因此默认改为布林30，MFI/RSI21 作对照；
+- 期权回测增加样本外统计和排序：表格可切换“5 年 / 样本外”，行内显示 OOS 收益，详情显示 OOS 回撤与超额；
+- 期权链快照：schema v8 新增 `option_chain_history`，每次同步按日 `INSERT OR IGNORE`，为未来真实期权回测积累数据。
   - 数据：东方财富期权链快照；标的 ETF 日线不足 1100 条时自动补 1600 条；研究记录见 `docs/OPTION_STRATEGIES.md`；
   - 实测：同步 98 个 510050 合约 + 116 个 510300 合约；自定义 LLT 正信号得到买入 50ETF购11月2900，成功创建/删除纸面策略。
 - 纸面冻结账本：schema v7 新增 `paper_ledger`，逐日净值/持仓/现金/调仓提示 `INSERT OR IGNORE`，同一交易日不重写；旧 `paper_equity` 与新账本合并展示。
@@ -102,8 +105,8 @@
 - `design/screens/app-strategy-alert.png`：本地测试注入持仓差异后，策略卡红色调仓标志。
 - `design/screens/app-simulation-alert.png`：模拟页“今日调仓”和红标。
 - `design/screens/app-stock.png`：K 线、因子快照、观察入口。
-- `design/screens/app-options.png`：期权页方向/5年回测/纸面分段，数据截止 2026-11-17，方向加 ▲/▼。
-- `design/screens/app-options-backtest.png`：510050 5 年回测，理论价徽标、数据截止、重新回测。
+- `design/screens/app-options.png`：期权页方向/5年回测/纸面分段，默认布林30日回归，数据截止 2026-11-17，快照已存 1 天。
+- `design/screens/app-options-backtest.png`：5年/最近2年样本外排序，布林30 OOS +11.44%、MFI/RSI21 OOS 为负。
 - `design/screens/app-options-backtest-300.png`：510300 5 年回测，MFI +115.84%、RSI21 +27.47%、MFI 宽幅 +25.77%。
 - `design/screens/app-options-backtest-iv.png`：IV 1.20 压力测试，510300 MFI +48.56%、单日恐慌 +6.74%。
 - `design/screens/app-options-backtest-detail.png`：选中策略的净值曲线与 ETF 基准。

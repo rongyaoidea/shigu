@@ -29,6 +29,7 @@ class OptionRepository(
             val contracts = api.fetchChain()
             if (contracts.isEmpty()) error("期权链为空")
             db.upsertOptionContracts(contracts)
+            db.saveOptionChainHistory(LocalDate.now().toString(), contracts)
             listOf("510050", "510300").forEach { code ->
                 if (db.getBars(code, 1).isEmpty()) {
                     val secid = db.getStock(code)?.secid ?: "sh$code"
@@ -139,6 +140,8 @@ class OptionRepository(
 
     fun lastBarDate(underlying: String): String =
         db.getBars(underlying, 1).lastOrNull()?.date ?: ""
+
+    fun chainHistoryDays(): Int = db.optionChainHistoryDays()
 
     fun signal(underlying: String, preset: OptionSignalPreset): Result<OptionSignal> = runCatching {
         val stock = db.getStock(underlying) ?: error("本地没有 $underlying")
