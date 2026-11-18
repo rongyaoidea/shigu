@@ -1,10 +1,10 @@
 # 实现状态（2026-11-18）
 
 > GitHub 仓库：https://github.com/rongyaoidea/shigu （public）
-> 最新发布：v0.10.0（GitHub Actions 用仓库 Secrets 中的 release keystore 签名）
-> https://github.com/rongyaoidea/shigu/releases/tag/v0.10.0
-> v0.5.0 增加自定义因子公式、因子相关性、纸面“同步+核对”；v0.8.0 增加纸面冻结账本；v0.9.0 增加期权样本外验证（已移除）；v0.10.0 起专注股票/ETF，删除期权模块及其本地数据。
-> v0.10.0 APK SHA-256：`c3276c9506015ea719e9751984a36743497d6217f22ec0859981c4de33db458d`
+> 最新发布：v0.10.1（GitHub Actions 用仓库 Secrets 中的 release keystore 签名）
+> https://github.com/rongyaoidea/shigu/releases/tag/v0.10.1
+> v0.5.0 增加自定义因子公式、因子相关性、纸面“同步+核对”；v0.8.0 增加纸面冻结账本；v0.9.0 增加期权样本外验证（已移除）；v0.10.0 起专注股票/ETF，删除期权模块及其本地数据；v0.10.1 支持 0 因子基础筛选。
+> v0.10.1 APK SHA-256：`dd98f4471f0719f9c481e31036e20746509efae826a50991ea7ef4d67a329239`
 
 ## 已完成并验证
 
