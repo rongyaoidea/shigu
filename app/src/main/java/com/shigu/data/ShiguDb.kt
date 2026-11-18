@@ -7,9 +7,6 @@ import com.shigu.core.Board
 import com.shigu.core.CustomFactor
 import com.shigu.core.DailyBar
 import com.shigu.core.DataStats
-import com.shigu.core.OptionContract
-import com.shigu.core.OptionBacktestResult
-import com.shigu.core.OptionPaperStrategy
 import com.shigu.core.OwnerType
 import com.shigu.core.StStatus
 import com.shigu.core.StatusSnapshot
@@ -17,7 +14,7 @@ import com.shigu.core.Stock
 import com.shigu.core.ValuationPoint
 import com.shigu.core.WatchItem
 
-class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 8) {
+class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "shigu.db", null, 9) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -120,30 +117,6 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
         )
         db.execSQL(
             """
-            CREATE TABLE option_backtest_runs(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                underlying TEXT NOT NULL, strike_offset INTEGER NOT NULL,
-                iv_multiplier REAL NOT NULL, created_at INTEGER NOT NULL,
-                preset_id TEXT NOT NULL, preset_name TEXT NOT NULL,
-                start_date TEXT NOT NULL, end_date TEXT NOT NULL,
-                stats_json TEXT NOT NULL, equity_json TEXT NOT NULL
-            )
-            """.trimIndent(),
-        )
-        db.execSQL("CREATE INDEX idx_option_backtest_underlying ON option_backtest_runs(underlying, created_at)")
-        db.execSQL(
-            """
-            CREATE TABLE option_chain_history(
-                date TEXT NOT NULL, code TEXT NOT NULL, underlying TEXT NOT NULL, name TEXT NOT NULL,
-                option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
-                last REAL NOT NULL, volume REAL NOT NULL, amount REAL NOT NULL, open_interest REAL NOT NULL,
-                updated_at INTEGER NOT NULL, PRIMARY KEY(date, code)
-            )
-            """.trimIndent(),
-        )
-        db.execSQL("CREATE INDEX idx_option_chain_history_date ON option_chain_history(date)")
-        db.execSQL(
-            """
             CREATE TABLE stock_status_history(
                 code TEXT NOT NULL, date TEXT NOT NULL, st_status TEXT NOT NULL,
                 owner_type TEXT NOT NULL, suspended INTEGER NOT NULL, listed_date TEXT NOT NULL DEFAULT '',
@@ -176,27 +149,6 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, expression TEXT NOT NULL,
                 higher_is_better INTEGER NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE option_contracts(
-                code TEXT PRIMARY KEY, underlying TEXT NOT NULL, name TEXT NOT NULL,
-                option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
-                remaining_days INTEGER NOT NULL DEFAULT 0, last REAL NOT NULL DEFAULT 0,
-                change_pct REAL NOT NULL DEFAULT 0, volume REAL NOT NULL DEFAULT 0,
-                amount REAL NOT NULL DEFAULT 0, open_interest REAL NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL DEFAULT 0
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE option_strategies(
-                id TEXT PRIMARY KEY, name TEXT NOT NULL, underlying TEXT NOT NULL,
-                strategy_type TEXT NOT NULL, config_json TEXT NOT NULL,
-                created_at INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
         )
@@ -307,29 +259,6 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 """.trimIndent(),
             )
         }
-        if (oldVersion < 6) {
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS option_contracts(
-                    code TEXT PRIMARY KEY, underlying TEXT NOT NULL, name TEXT NOT NULL,
-                    option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
-                    remaining_days INTEGER NOT NULL DEFAULT 0, last REAL NOT NULL DEFAULT 0,
-                    change_pct REAL NOT NULL DEFAULT 0, volume REAL NOT NULL DEFAULT 0,
-                    amount REAL NOT NULL DEFAULT 0, open_interest REAL NOT NULL DEFAULT 0,
-                    updated_at INTEGER NOT NULL DEFAULT 0
-                )
-                """.trimIndent(),
-            )
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS option_strategies(
-                    id TEXT PRIMARY KEY, name TEXT NOT NULL, underlying TEXT NOT NULL,
-                    strategy_type TEXT NOT NULL, config_json TEXT NOT NULL,
-                    created_at INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0
-                )
-                """.trimIndent(),
-            )
-        }
         if (oldVersion < 7) {
             db.execSQL(
                 """
@@ -341,32 +270,13 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
                 )
                 """.trimIndent(),
             )
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS option_backtest_runs(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    underlying TEXT NOT NULL, strike_offset INTEGER NOT NULL,
-                    iv_multiplier REAL NOT NULL, created_at INTEGER NOT NULL,
-                    preset_id TEXT NOT NULL, preset_name TEXT NOT NULL,
-                    start_date TEXT NOT NULL, end_date TEXT NOT NULL,
-                    stats_json TEXT NOT NULL, equity_json TEXT NOT NULL
-                )
-                """.trimIndent(),
-            )
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_option_backtest_underlying ON option_backtest_runs(underlying, created_at)")
         }
-        if (oldVersion < 8) {
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS option_chain_history(
-                    date TEXT NOT NULL, code TEXT NOT NULL, underlying TEXT NOT NULL, name TEXT NOT NULL,
-                    option_type TEXT NOT NULL, strike REAL NOT NULL, expiry TEXT NOT NULL,
-                    last REAL NOT NULL, volume REAL NOT NULL, amount REAL NOT NULL, open_interest REAL NOT NULL,
-                    updated_at INTEGER NOT NULL, PRIMARY KEY(date, code)
-                )
-                """.trimIndent(),
-            )
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_option_chain_history_date ON option_chain_history(date)")
+        if (oldVersion < 9) {
+            // v0.10.0 起只做股票/ETF，移除期权模块及其本地数据。
+            db.execSQL("DROP TABLE IF EXISTS option_contracts")
+            db.execSQL("DROP TABLE IF EXISTS option_strategies")
+            db.execSQL("DROP TABLE IF EXISTS option_backtest_runs")
+            db.execSQL("DROP TABLE IF EXISTS option_chain_history")
         }
     }
 
@@ -757,203 +667,6 @@ class ShiguDb(private val appContext: Context) : SQLiteOpenHelper(appContext, "s
     fun deleteCustomFactor(id: String) {
         writableDatabase.delete("custom_factors", "id=?", arrayOf(id))
     }
-
-    // ---------------- 期权 ----------------
-
-    fun getOptionContracts(underlying: String? = null): List<OptionContract> {
-        val out = ArrayList<OptionContract>()
-        val sql = if (underlying == null) {
-            "SELECT code,underlying,name,option_type,strike,expiry,remaining_days,last,change_pct,volume,amount,open_interest,updated_at FROM option_contracts ORDER BY underlying,expiry,option_type,strike"
-        } else {
-            "SELECT code,underlying,name,option_type,strike,expiry,remaining_days,last,change_pct,volume,amount,open_interest,updated_at FROM option_contracts WHERE underlying=? ORDER BY expiry,option_type,strike"
-        }
-        readableDatabase.rawQuery(sql, if (underlying == null) null else arrayOf(underlying)).use { c ->
-            while (c.moveToNext()) {
-                out += OptionContract(
-                    code = c.getString(0),
-                    underlying = c.getString(1),
-                    name = c.getString(2),
-                    type = runCatching { com.shigu.core.OptionType.valueOf(c.getString(3)) }
-                        .getOrDefault(com.shigu.core.OptionType.CALL),
-                    strike = c.getDouble(4),
-                    expiry = c.getString(5),
-                    remainingDays = c.getInt(6),
-                    last = c.getDouble(7),
-                    changePct = c.getDouble(8),
-                    volume = c.getDouble(9),
-                    amount = c.getDouble(10),
-                    openInterest = c.getDouble(11),
-                    updatedAt = c.getLong(12),
-                )
-            }
-        }
-        return out
-    }
-
-    fun upsertOptionContracts(list: List<OptionContract>) {
-        if (list.isEmpty()) return
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            val st = db.compileStatement(
-                "INSERT OR REPLACE INTO option_contracts(code,underlying,name,option_type,strike,expiry,remaining_days,last,change_pct,volume,amount,open_interest,updated_at) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            )
-            list.forEach { o ->
-                st.clearBindings()
-                st.bindString(1, o.code)
-                st.bindString(2, o.underlying)
-                st.bindString(3, o.name)
-                st.bindString(4, o.type.name)
-                st.bindDouble(5, o.strike)
-                st.bindString(6, o.expiry)
-                st.bindLong(7, o.remainingDays.toLong())
-                st.bindDouble(8, o.last)
-                st.bindDouble(9, o.changePct)
-                st.bindDouble(10, o.volume)
-                st.bindDouble(11, o.amount)
-                st.bindDouble(12, o.openInterest)
-                st.bindLong(13, o.updatedAt)
-                st.executeInsert()
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
-    }
-
-    fun getOptionStrategies(): List<OptionPaperStrategy> {
-        val out = ArrayList<OptionPaperStrategy>()
-        readableDatabase.rawQuery(
-            "SELECT config_json FROM option_strategies WHERE closed=0 ORDER BY created_at DESC",
-            null,
-        ).use { c ->
-            while (c.moveToNext()) {
-                OptionJsonCodec.decode(c.getString(0))?.let { out += it }
-            }
-        }
-        return out
-    }
-
-    fun upsertOptionStrategy(config: OptionPaperStrategy) {
-        writableDatabase.execSQL(
-            "INSERT OR REPLACE INTO option_strategies(id,name,underlying,strategy_type,config_json,created_at,closed) VALUES(?,?,?,?,?,?,0)",
-            arrayOf<Any?>(
-                config.id,
-                config.name,
-                config.underlying,
-                config.presetId,
-                OptionJsonCodec.encode(config),
-                config.createdAt,
-            ),
-        )
-    }
-
-    fun deleteOptionStrategy(id: String) {
-        writableDatabase.delete("option_strategies", "id=?", arrayOf(id))
-    }
-
-    // ---------------- 期权回测记录 ----------------
-
-    fun saveOptionBacktestRun(
-        underlying: String,
-        strikeOffset: Int,
-        ivMultiplier: Double,
-        createdAt: Long,
-        results: List<OptionBacktestResult>,
-    ) {
-        if (results.isEmpty()) return
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            db.delete("option_backtest_runs", "underlying=?", arrayOf(underlying))
-            val st = db.compileStatement(
-                "INSERT INTO option_backtest_runs(underlying,strike_offset,iv_multiplier,created_at,preset_id,preset_name,start_date,end_date,stats_json,equity_json) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
-            )
-            results.forEach { r ->
-                st.clearBindings()
-                st.bindString(1, underlying)
-                st.bindLong(2, strikeOffset.toLong())
-                st.bindDouble(3, ivMultiplier)
-                st.bindLong(4, createdAt)
-                st.bindString(5, r.stats.presetId)
-                st.bindString(6, r.stats.presetName)
-                st.bindString(7, r.stats.startDate)
-                st.bindString(8, r.stats.endDate)
-                st.bindString(9, OptionBacktestCodec.encodeStats(r.stats))
-                st.bindString(10, OptionBacktestCodec.encodeEquity(r.equity))
-                st.executeInsert()
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
-    }
-
-    fun getOptionBacktestRun(
-        underlying: String,
-        strikeOffset: Int,
-        ivMultiplier: Double,
-    ): Pair<Long, List<OptionBacktestResult>>? {
-        val runAt = readableDatabase.rawQuery(
-            "SELECT MAX(created_at) FROM option_backtest_runs WHERE underlying=? AND strike_offset=? AND iv_multiplier=?",
-            arrayOf(underlying, strikeOffset.toString(), ivMultiplier.toString()),
-        ).use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null } ?: return null
-        val out = ArrayList<OptionBacktestResult>()
-        readableDatabase.rawQuery(
-            "SELECT stats_json,equity_json FROM option_backtest_runs WHERE underlying=? AND strike_offset=? AND iv_multiplier=? AND created_at=? ORDER BY id",
-            arrayOf(underlying, strikeOffset.toString(), ivMultiplier.toString(), runAt.toString()),
-        ).use { c ->
-            while (c.moveToNext()) {
-                val stats = OptionBacktestCodec.decodeStats(c.getString(0)) ?: continue
-                out += OptionBacktestResult(
-                    stats = stats,
-                    equity = OptionBacktestCodec.decodeEquity(c.getString(1)),
-                    trades = emptyList(),
-                    warning = "来自本地回测记录；期权价格为 Black-Scholes 理论价。",
-                )
-            }
-        }
-        return if (out.isEmpty()) null else runAt to out
-    }
-
-    /** 每日保存一次期权链快照，为未来真实期权回测积累数据。 */
-    fun saveOptionChainHistory(date: String, contracts: List<OptionContract>) {
-        if (contracts.isEmpty() || date.isBlank()) return
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            val st = db.compileStatement(
-                "INSERT OR IGNORE INTO option_chain_history(date,code,underlying,name,option_type,strike,expiry,last,volume,amount,open_interest,updated_at) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-            )
-            contracts.forEach { c ->
-                st.clearBindings()
-                st.bindString(1, date)
-                st.bindString(2, c.code)
-                st.bindString(3, c.underlying)
-                st.bindString(4, c.name)
-                st.bindString(5, c.type.name)
-                st.bindDouble(6, c.strike)
-                st.bindString(7, c.expiry)
-                st.bindDouble(8, c.last)
-                st.bindDouble(9, c.volume)
-                st.bindDouble(10, c.amount)
-                st.bindDouble(11, c.openInterest)
-                st.bindLong(12, c.updatedAt)
-                st.executeInsert()
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
-    }
-
-    fun optionChainHistoryDays(): Int = readableDatabase.rawQuery(
-        "SELECT COUNT(DISTINCT date) FROM option_chain_history",
-        null,
-    ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
     // ---------------- 时点状态 ----------------
 

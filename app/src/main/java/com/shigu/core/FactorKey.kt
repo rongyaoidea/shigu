@@ -90,16 +90,5 @@ enum class FactorKey(
         val technical: List<FactorKey> = entries.filter { !it.currentOnly }
         val fundamental: List<FactorKey> = entries.filter { it.currentOnly }
         val categories: List<String> = entries.map { it.category }.distinct()
-        /** 适合单只 ETF 的时序因子（不含截面/财务/估值/上市天数）。 */
-        val etfUsable: List<FactorKey> = entries.filter {
-            !it.currentOnly && !it.snapshotOnly && !it.crossSectional &&
-                it.category in setOf("趋势", "量价", "风险", "反转")
-        }
-
-        /** 只用于判断涨跌方向的 ETF 因子：趋势/反转 + 量比。 */
-        val etfDirectional: List<FactorKey> = entries.filter {
-            !it.currentOnly && !it.snapshotOnly && !it.crossSectional &&
-                (it.category in setOf("趋势", "反转") || it == VOLUME_RATIO)
-        }
     }
 }
